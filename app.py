@@ -227,10 +227,15 @@ section[data-testid="stSidebar"] {
   backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); 
   overflow-x: auto; flex-wrap: nowrap; 
 } 
-.stTabs [data-baseweb="tab"] { border-radius: 11px; padding: 10px 16px; font-weight: 700; color: var(--ink-soft); white-space: nowrap; } 
+.stTabs [data-baseweb="tab"] { border-radius: 999px; padding: 10px 18px; font-weight: 600; border:none; color: var(--ink-soft); white-space: nowrap; } 
 .stTabs [aria-selected="true"] { 
   color: white !important; 
-  background: linear-gradient(135deg, var(--accent1), var(--accent2)) !important; 
+  background: linear-gradient(135deg, var(--accent1), var(--accent2)) !important;
+  border-radius:999px !important;
+  padding: 10px 18px !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0,12) !important;
+  
 } 
  
 /* FLASHCARDS -- real flip cards, pure CSS (checkbox hack), no JS */ 
