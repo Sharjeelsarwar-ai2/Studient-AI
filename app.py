@@ -1105,7 +1105,7 @@ def metric_card(chip_class, icon, label, value):
 html(""" 
 <div class="sm-hero"> 
   <div style="font-size:54px;">🧠</div> 
-  <h1><span class="grad">Studient class="grad">AI</span></h1> 
+  <h1><span class="grad">Studient</span><span> AI</h1> 
   <p class="sub">Your Personal AI-Powered Study Assistant</p> 
   <p class="desc">Upload your lecture notes or PDF and transform them into clear, 
   organized, exam-ready study material — then test yourself and track your progress.</p> 
