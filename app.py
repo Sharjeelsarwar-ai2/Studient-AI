@@ -1105,7 +1105,7 @@ def metric_card(chip_class, icon, label, value):
 html(""" 
 <div class="sm-hero"> 
   <div style="font-size:54px;">🧠</div> 
-  <h1>AI <span class="grad">StudyMate Pro</span></h1> 
+  <h1>Studient <span class="grad">AI</span></h1> 
   <p class="sub">Your Personal AI-Powered Study Assistant</p> 
   <p class="desc">Upload your lecture notes or PDF and transform them into clear, 
   organized, exam-ready study material — then test yourself and track your progress.</p> 
@@ -1159,7 +1159,7 @@ with st.sidebar:
 if not st.session_state.pdf_text: 
     html(""" 
     <div class="sm-card"> 
-      <h2>👋 Welcome to AI StudyMate</h2> 
+      <h2>👋 Welcome to Stuident AI</h2> 
       <p>Upload your study material from the sidebar and transform it into personalized exam preparation.</p> 
     </div> 
     """) 
@@ -1212,7 +1212,7 @@ Structure it with: 1. Chapter Overview 2. Main Concepts 3. Important Definitions
  
 STUDY MATERIAL: 
 {context}""" 
-        with st.spinner("AI StudyMate is analyzing your material..."): 
+        with st.spinner("Studient AI is analyzing your material..."): 
             result = ask_groq(prompt, max_tokens=2600) 
         if result: 
             html(f'<div class="sm-answer"><div class="title">📚 AI Study Summary</div></div>') 
@@ -1484,7 +1484,7 @@ with tabs[9]:
 # ---------------- ASK PDF ---------------- 
 with tabs[10]: 
     st.header("💬 Ask Questions About Your PDF") 
-    st.caption("Ask questions and StudyMate will search your uploaded material.") 
+    st.caption("Ask questions and STudient AI will search your uploaded material.") 
  
     use_general_knowledge = st.checkbox( 
         "💡 Also use general knowledge (for brainstorming, improvements, opinions — not just facts in the PDF)", 
@@ -1495,7 +1495,7 @@ with tabs[10]:
     ) 
  
     user_question = st.text_input("Your question", placeholder="e.g. Explain the process of stellar evolution.") 
-    if st.button("🤖 Ask StudyMate", key="ask_pdf"): 
+    if st.button("🤖 Ask Studient", key="ask_pdf"): 
         if not user_question.strip(): 
             st.warning("Please enter a question first.") 
         else: 
@@ -1535,7 +1535,7 @@ STUDENT QUESTION:
             with st.spinner("Searching your PDF and thinking..."): 
                 answer = ask_groq(prompt, max_tokens=2500) 
             if answer: 
-                title = "🤖 StudyMate Answer" if not use_general_knowledge else "🤖 StudyMate Answer (PDF + general knowledge)" 
+                title = "🤖 StudientAI Answer" if not use_general_knowledge else "🤖 StudientAI Answer (PDF + general knowledge)" 
                 html(f'<div class="sm-answer"><div class="title">{title}</div></div>') 
                 st.markdown(answer) 
  
@@ -1545,6 +1545,6 @@ STUDENT QUESTION:
  
 html(""" 
 <div style="margin-top:44px; padding:26px; text-align:center; color:#94a3b8; font-size:13px; border-top:1px solid rgba(20,20,40,0.08);"> 
-  🧠 AI StudyMate Pro — Powered by Groq · Built with Python & Streamlit 
+  🧠 StudientAI — All rights reserved to Sharjeelsarwar-ai2 
 </div> 
 """)
