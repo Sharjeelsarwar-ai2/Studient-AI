@@ -1159,7 +1159,7 @@ with st.sidebar:
 if not st.session_state.pdf_text: 
     html(""" 
     <div class="sm-card"> 
-      <h2>👋 Welcome to Stuident AI</h2> 
+      <h2><span class="grad">👋 Welcome to Studient AI</span></h2> 
       <p>Upload your study material from the sidebar and transform it into personalized exam preparation.</p> 
     </div> 
     """) 
