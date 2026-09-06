@@ -4,7 +4,7 @@
 
 
 """ 
-AI StudyMate Pro 
+Studient AI 
 ================= 
 Flat single-row tab layout (matches the original UI), with the graded 
 interactive Test and Analytics features folded in as regular tabs. 
@@ -27,7 +27,7 @@ from collections import Counter, defaultdict
 # ============================================================ 
  
 st.set_page_config( 
-    page_title="AI StudyMate Pro", 
+    page_title="Studient AI", 
     page_icon="🧠", 
     layout="wide", 
     initial_sidebar_state="expanded", 
