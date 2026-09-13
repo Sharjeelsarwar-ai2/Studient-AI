@@ -650,6 +650,35 @@ hr { border-color: rgba(79,70,229,.12); }
 .sm-progress-orb-content { position:relative; text-align:center; color:var(--ink); }
 .sm-progress-number { display:block; font-size:27px; font-weight:850; letter-spacing:-1px; }
 .sm-progress-label { display:block; color:var(--ink-faint); font-size:10px; font-weight:750; }
+.sm-dashboard { margin:0 0 24px; padding:28px; border-radius:30px; background:linear-gradient(125deg,rgba(255,255,255,.72),rgba(224,231,255,.52) 46%,rgba(253,242,255,.62)); border:1px solid rgba(255,255,255,.8); box-shadow:0 20px 52px rgba(31,25,90,.16), inset 0 1px 0 rgba(255,255,255,.9); }
+.sm-dashboard-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; flex-wrap:wrap; margin-bottom:24px; }
+.sm-dashboard-heading h2 { margin:4px 0 4px; color:var(--ink); font-size:26px; letter-spacing:-.8px; }
+.sm-dashboard-heading p { margin:0; color:var(--ink-faint); font-size:13px; }
+.sm-dashboard-recommend { min-width:220px; padding:14px 16px; border-radius:17px; background:linear-gradient(135deg,rgba(79,70,229,.11),rgba(219,39,119,.10)); border:1px solid rgba(124,58,237,.16); }
+.sm-dashboard-recommend span { display:block; color:var(--ink-faint); font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.6px; margin-bottom:5px; }
+.sm-dashboard-recommend b { color:var(--accent1); font-size:13px; }
+.sm-dashboard-grid { display:grid; grid-template-columns:2fr repeat(4,1fr); gap:12px; }
+.sm-dashboard-gauge { display:flex; align-items:center; gap:18px; padding:17px; min-height:128px; border-radius:21px; background:rgba(255,255,255,.5); border:1px solid rgba(255,255,255,.7); }
+.sm-dashboard-gauge .sm-progress-orb { flex:0 0 auto; width:92px; height:92px; }
+.sm-dashboard-gauge .sm-progress-orb::before { inset:8px; }
+.sm-dashboard-gauge .sm-progress-number { font-size:21px; }
+.sm-dashboard-card-kicker, .sm-dashboard-section-title { color:var(--accent1); font-size:10px; font-weight:850; letter-spacing:.7px; text-transform:uppercase; }
+.sm-dashboard-gauge b { display:block; color:var(--ink); margin:4px 0; }
+.sm-dashboard-gauge p { margin:0; color:var(--ink-faint); font-size:11px; line-height:1.4; }
+.sm-dashboard-stat { display:flex; flex-direction:column; justify-content:center; min-height:128px; padding:15px; border-radius:21px; background:rgba(255,255,255,.46); border:1px solid rgba(255,255,255,.7); }
+.sm-dashboard-stat span { font-size:22px; margin-bottom:8px; }
+.sm-dashboard-stat b { color:var(--ink); font-size:23px; letter-spacing:-.7px; }
+.sm-dashboard-stat small { color:var(--ink-faint); font-size:11px; margin-top:3px; }
+.sm-dashboard-columns { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:18px; }
+.sm-dashboard-section-title { margin:0 0 8px 3px; }
+.sm-dashboard-row, .sm-dashboard-summary { display:flex; justify-content:space-between; gap:12px; padding:10px 12px; margin-top:6px; border-radius:12px; background:rgba(255,255,255,.42); color:var(--ink-soft); font-size:12px; }
+.sm-dashboard-row span:last-child { color:var(--ink-faint); font-size:10px; }
+.sm-dashboard-summary { display:block; }
+.sm-dashboard-summary b { display:block; color:var(--ink); margin-bottom:3px; }
+.sm-dashboard-summary span { display:block; color:var(--ink-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sm-dashboard-empty { padding:12px; border-radius:12px; background:rgba(255,255,255,.32); color:var(--ink-faint); font-size:12px; }
+@media (max-width: 1050px) { .sm-dashboard-grid { grid-template-columns:repeat(2,1fr); } .sm-dashboard-gauge { grid-column:span 2; } }
+@media (max-width: 640px) { .sm-dashboard { padding:20px; } .sm-dashboard-grid, .sm-dashboard-columns { grid-template-columns:1fr; } .sm-dashboard-gauge { grid-column:auto; } }
 .sm-footer { opacity:.8; }
 .sm-audio-panel { margin-top:20px; padding:20px; border-radius:20px; background:linear-gradient(135deg,rgba(224,231,255,.72),rgba(253,242,255,.72)); border:1px solid rgba(124,58,237,.16); box-shadow:0 12px 28px rgba(31,25,90,.1), inset 0 1px 0 rgba(255,255,255,.8); }
 .sm-audio-title { color:var(--ink); font-size:16px; font-weight:750; margin-bottom:5px; }
@@ -1389,6 +1418,7 @@ def render_mind_map(mind_map):
 # ============================================================ 
  
 HISTORY_FILE = "study_history.json" 
+SUMMARY_HISTORY_FILE = "summary_history.json"
  
 def load_history(): 
     if os.path.exists(HISTORY_FILE): 
@@ -1412,6 +1442,79 @@ def save_attempt(document_name, score, total, topic_results):
     except Exception as e: 
         st.warning(f"Couldn't save this attempt to history: {e}") 
     return history 
+
+
+def load_summary_history():
+    if os.path.exists(SUMMARY_HISTORY_FILE):
+        try:
+            with open(SUMMARY_HISTORY_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+
+def save_summary(document_name, summary):
+    history = load_summary_history()
+    history.append({
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "document": document_name,
+        "preview": clean_speech_text(summary)[:280],
+    })
+    try:
+        with open(SUMMARY_HISTORY_FILE, "w") as f:
+            json.dump(history[-20:], f, indent=2)
+    except Exception as e:
+        st.warning(f"Couldn't save summary activity: {e}")
+
+
+def dashboard_snapshot():
+    attempts = load_history()
+    summaries = load_summary_history()
+    documents = {}
+    for attempt in attempts:
+        name = attempt.get("document", "Unknown document")
+        documents[name] = attempt.get("timestamp", "")
+    if st.session_state.get("document_name"):
+        documents[st.session_state.document_name] = datetime.now().isoformat(timespec="seconds")
+
+    total_questions = sum(int(item.get("total", 0)) for item in attempts)
+    best_score = max((round(item["score"] / item["total"] * 100) for item in attempts if item.get("total")), default=0)
+    mastered = sum(1 for status in st.session_state.get("flashcard_status", {}).values() if status == "Mastered")
+    current_cards = len(st.session_state.get("flashcards") or [])
+    readiness = min(100, round(best_score * 0.7 + (20 if st.session_state.get("summary_text") else 0) + (10 if current_cards else 0)))
+
+    days = sorted({item.get("timestamp", "")[:10] for item in attempts if item.get("timestamp")}, reverse=True)
+    streak = 0
+    if days:
+        from datetime import date, timedelta
+        today = date.today()
+        for offset, day in enumerate(days):
+            if day == str(today - timedelta(days=offset)):
+                streak += 1
+            else:
+                break
+    recommended = "Take a practice test" if total_questions == 0 else "Review cards marked Needs practice" if mastered < current_cards else "Generate a fresh summary"
+    recent_docs = sorted(documents.items(), key=lambda item: item[1], reverse=True)[:5]
+    recent_summaries = list(reversed(summaries[-4:]))
+    return {"total_questions": total_questions, "best_score": best_score, "mastered": mastered, "current_cards": current_cards, "readiness": readiness, "streak": streak, "recommended": recommended, "recent_docs": recent_docs, "recent_summaries": recent_summaries}
+
+
+def render_dashboard():
+    data = dashboard_snapshot()
+    doc_rows = "".join(f'<div class="sm-dashboard-row"><span>📄 {_html_escape_lib.escape(name)}</span><span>{stamp[:10] or "Recently"}</span></div>' for name, stamp in data["recent_docs"]) or '<div class="sm-dashboard-empty">Upload a document to begin your study journey.</div>'
+    summary_rows = "".join(f'<div class="sm-dashboard-summary"><b>{_html_escape_lib.escape(item.get("document", "Study summary"))}</b><span>{_html_escape_lib.escape(item.get("preview", ""))}</span></div>' for item in data["recent_summaries"]) or '<div class="sm-dashboard-empty">Your generated summaries will appear here.</div>'
+    html(f'''<section class="sm-dashboard">
+      <div class="sm-dashboard-heading"><div><div class="sm-progress-kicker">Personal learning command center</div><h2>Welcome back to your study space</h2><p>Track your momentum, pick up where you left off, and make every session count.</p></div><div class="sm-dashboard-recommend"><span>Next best step</span><b>✨ {data["recommended"]}</b></div></div>
+      <div class="sm-dashboard-grid">
+        <div class="sm-dashboard-gauge"><div class="sm-progress-orb" style="--progress:{data["readiness"]};"><div class="sm-progress-orb-content"><span class="sm-progress-number">{data["readiness"]}%</span><span class="sm-progress-label">readiness</span></div></div><div><div class="sm-dashboard-card-kicker">EXAM READINESS</div><b>Build confident recall</b><p>Your readiness grows as you summarize, practice, and review.</p></div></div>
+        <div class="sm-dashboard-stat"><span>🔥</span><b>{data["streak"]} day</b><small>study streak</small></div>
+        <div class="sm-dashboard-stat"><span>✅</span><b>{data["total_questions"]}</b><small>questions completed</small></div>
+        <div class="sm-dashboard-stat"><span>🎴</span><b>{data["mastered"]}/{data["current_cards"]}</b><small>flashcards mastered</small></div>
+        <div class="sm-dashboard-stat"><span>🏆</span><b>{data["best_score"]}%</b><small>best test score</small></div>
+      </div>
+      <div class="sm-dashboard-columns"><div><div class="sm-dashboard-section-title">Recent documents</div>{doc_rows}</div><div><div class="sm-dashboard-section-title">Recently generated summaries</div>{summary_rows}</div></div>
+    </section>''')
  
  
 # ============================================================ 
@@ -1568,6 +1671,7 @@ if not st.session_state.pdf_text:
     ]: 
         with col: 
             html(f'<div class="sm-feature"><div class="icon">{icon}</div><div class="title">{title}</div><div class="text">{text}</div></div>') 
+    render_dashboard()
     html('<div class="sm-warning"><b>📌 Important</b><br><br>Text-based PDFs work best. Image-only scanned PDFs may require OCR.</div>') 
     st.stop() 
  
@@ -1590,10 +1694,7 @@ with m2:
 with m3: 
     metric_card("chip-orange", "🎯", "Difficulty", difficulty) 
 
-doc_attempts = [h for h in load_history() if h.get("document") == st.session_state.document_name]
-best_score = max((round((h["score"] / h["total"]) * 100) for h in doc_attempts if h.get("total")), default=0)
-readiness = min(100, round(best_score * 0.7 + (20 if st.session_state.get("summary_text") else 0) + (10 if st.session_state.get("flashcards") else 0)))
-html(f'<div class="sm-progress-dashboard"><div class="sm-progress-copy"><div class="sm-progress-kicker">Your learning dashboard</div><div class="sm-progress-title">Keep building momentum</div><div class="sm-progress-sub">{len(doc_attempts)} practice attempt(s) · {len(st.session_state.get("flashcards") or [])} flashcards ready · Best score: {best_score}%</div></div><div class="sm-progress-orb" style="--progress:{readiness};"><div class="sm-progress-orb-content"><span class="sm-progress-number">{readiness}%</span><span class="sm-progress-label">readiness</span></div></div></div>')
+render_dashboard()
  
 st.markdown("<br>", unsafe_allow_html=True) 
  
@@ -1624,6 +1725,7 @@ STUDY MATERIAL:
         if result: 
             st.session_state.summary_text = result
             st.session_state.summary_audio = None
+            save_summary(st.session_state.document_name, result)
             html(f'<div class="sm-answer"><div class="title">📚 AI Study Summary</div></div>') 
             st.markdown(result) 
             st.download_button("⬇️ Download summary as Markdown", result, file_name="studient-summary.md", mime="text/markdown", key="download_summary_markdown")
