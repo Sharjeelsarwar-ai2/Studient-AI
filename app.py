@@ -762,7 +762,29 @@ def get_groq_client():
     return Groq(api_key=api_key) 
  
  
+@st.cache_data(ttl=3600, max_entries=128, show_spinner=False)
+def cached_groq_response(prompt, system_message, max_tokens):
+    client = get_groq_client()
+    if client is None:
+        return ""
+    for model in MODEL_CANDIDATES:
+        try:
+            messages = []
+            if system_message:
+                messages.append({"role": "system", "content": system_message})
+            messages.append({"role": "user", "content": prompt})
+            response = client.chat.completions.create(model=model, messages=messages, temperature=0.2, max_tokens=max_tokens)
+            return response.choices[0].message.content
+        except Exception:
+            continue
+    return ""
+
+
 def ask_groq(prompt, system_message=None, max_tokens=2000): 
+    """Cached AI request wrapper to avoid duplicate generation on Streamlit reruns."""
+    cached = cached_groq_response(prompt, system_message or "", max_tokens)
+    if cached:
+        return cached
     client = get_groq_client() 
     if client is None: 
         return "" 
@@ -945,6 +967,7 @@ def chunk_text(text, chunk_size=7000):
     return chunks 
  
  
+@st.cache_data(max_entries=128, show_spinner=False)
 def get_relevant_chunks(text, query, max_chunks=8, max_context_chars=12000):
     """
     Select the most relevant chunks while enforcing a hard context-size limit.
@@ -1672,6 +1695,28 @@ WORKSPACE CONTEXT:
     return ask_groq(prompt, max_tokens=1800)
 
 
+def generate_study_material(material_type, focus, difficulty):
+    context = get_relevant_chunks(st.session_state.pdf_text, focus or "all important topics", max_chunks=8, max_context_chars=10000)
+    instructions = {
+        "Cheat sheet": "Create a concise exam-ready cheat sheet with headings, key facts, definitions, processes, formulas, and common mistakes.",
+        "Formula sheet": "Extract and explain every important formula, define each variable, state units, and include when to use it.",
+        "Glossary": "Create a glossary of the most important terms with clear one-to-two sentence definitions and examples.",
+        "Concept comparison table": "Create a markdown comparison table of the most important related concepts, including similarities, differences, use cases, and exam traps.",
+        "Timeline summary": "Create a chronological timeline with dates or sequence markers, events, causes, consequences, and memory cues.",
+        "Case studies": "Create realistic case studies based only on the workspace, followed by analysis questions and model reasoning.",
+        "Lab-viva questions": "Create laboratory viva questions with concise model answers, safety notes, observations, and common examiner follow-ups.",
+        "Oral examination questions": "Create oral examination questions from easy to difficult, with ideal answer points and follow-up questions.",
+    }
+    prompt = f"""{instructions[material_type]}
+Difficulty/depth: {difficulty}
+Focus: {focus or 'all important topics'}
+Return polished markdown suitable for a student to revise directly. Ground every factual claim in the workspace material and say when the material does not provide an answer.
+
+WORKSPACE MATERIAL:
+{context}"""
+    return ask_groq(prompt, max_tokens=3600)
+
+
 def load_summary_history():
     if os.path.exists(SUMMARY_HISTORY_FILE):
         try:
@@ -1824,6 +1869,7 @@ defaults = {
     "incorrect_questions": [],
     "important_questions": None, "mcq_questions": None,
     "study_plan": None, "tutor_messages": [], "tutor_level": "Intermediate",
+    "generated_material": None, "generated_material_type": "",
 } 
 for k, v in defaults.items(): 
     if k not in st.session_state: 
@@ -1922,9 +1968,12 @@ with st.sidebar:
         if st.session_state.document_signature != signature:
             documents = {}
             with st.spinner("Reading your workspace documents..."):
-                for file in uploaded_files:
+                progress = st.progress(0, text="Preparing workspace extraction...")
+                for index, file in enumerate(uploaded_files, 1):
+                    progress.progress((index - 1) / len(uploaded_files), text=f"Extracting {file.name} ({index}/{len(uploaded_files)})")
                     extracted, detected_type = extract_document_text(file)
                     documents[file.name] = {"type": detected_type, "text": clean_text(extracted), "size": file.size}
+                progress.progress(1.0, text="Workspace extraction complete")
             combined = "\n\n".join(f"\n[DOCUMENT: {name}]\n{data['text']}" for name, data in documents.items() if data["text"])
             st.session_state.workspace_documents = documents
             st.session_state.pdf_text = combined
@@ -2024,7 +2073,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 tabs = st.tabs([ 
     "📚 Summary", "📝 Questions", "❓ MCQs", "🎴 Flashcards", 
     "📖 Long Questions", "🎯 Short Questions", "🔍 Key Concepts", 
-    "📊 Difficulty", "🧪 Practice Test", "📈 Analytics", "🧠 Mind Map", "💬 Ask PDF", "🗓️ Study Plan", "🧑‍🏫 AI Tutor",
+    "📊 Difficulty", "🧪 Practice Test", "📈 Analytics", "🧠 Mind Map", "💬 Ask PDF", "🗓️ Study Plan", "🧑‍🏫 AI Tutor", "🧰 Study Materials",
 ]) 
  
 # ---------------- SUMMARY ---------------- 
@@ -2560,6 +2609,23 @@ with tabs[13]:
     if st.session_state.tutor_messages and st.button("🧹 Clear tutor conversation", key="clear_tutor"):
         st.session_state.tutor_messages = []
         st.rerun()
+
+# ---------------- STUDY MATERIALS ----------------
+with tabs[14]:
+    st.header("🧰 Study Materials Lab")
+    st.caption("Generate focused revision assets only when you need them, keeping large workspaces fast and uncluttered.")
+    material_type = st.selectbox("Material type", ["Cheat sheet", "Formula sheet", "Glossary", "Concept comparison table", "Timeline summary", "Case studies", "Lab-viva questions", "Oral examination questions"], key="material_type")
+    material_focus = st.text_input("Focus topic (optional)", placeholder="e.g. photosynthesis, Chapter 3, or all major concepts", key="material_focus")
+    material_depth = st.selectbox("Depth", ["Quick revision", "Exam-ready", "Deep study"], key="material_depth")
+    if st.button("✨ Generate study material", key="generate_study_material"):
+        with st.spinner(f"Creating your {material_type.lower()}..."):
+            st.session_state.generated_material = generate_study_material(material_type, material_focus, material_depth)
+            st.session_state.generated_material_type = material_type
+        st.rerun()
+    if st.session_state.get("generated_material"):
+        html(f'<div class="sm-answer"><div class="title">🧰 {st.session_state.generated_material_type}</div></div>')
+        st.markdown(st.session_state.generated_material)
+        st.download_button("⬇️ Download study material", st.session_state.generated_material, file_name=f"studient-{st.session_state.generated_material_type.lower().replace(' ', '-')}.md", mime="text/markdown", key="download_generated_material")
 
 # ============================================================ 
 # FOOTER 
