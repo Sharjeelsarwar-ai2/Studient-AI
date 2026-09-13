@@ -34,11 +34,31 @@ import os
 import hashlib
 import random
 import time
+import zipfile
+import textwrap
 import html as _html_escape_lib  # aliased: this file defines its own html() render helper below 
 from io import BytesIO, StringIO
 import csv
 from datetime import datetime, date, timedelta
 from collections import Counter, defaultdict 
+
+try:
+    from docx import Document
+except ImportError:
+    Document = None
+
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+    from reportlab.lib.units import inch
+except ImportError:
+    SimpleDocTemplate = None
+
+try:
+    from PIL import Image, ImageDraw, ImageFont
+except ImportError:
+    Image = ImageDraw = ImageFont = None
 
 try:
     from gtts import gTTS
@@ -1470,6 +1490,7 @@ def save_attempt(document_name, score, total, topic_results):
     history.append({ 
         "timestamp": datetime.now().isoformat(timespec="seconds"), 
         "document": document_name, "score": score, "total": total, "topics": topic_results, 
+        "duration_minutes": round(max(0, (time.time() - (st.session_state.get("test_started_at") or time.time())) / 60), 1),
     }) 
     try: 
         with open(HISTORY_FILE, "w") as f: 
@@ -1477,6 +1498,110 @@ def save_attempt(document_name, score, total, topic_results):
     except Exception as e: 
         st.warning(f"Couldn't save this attempt to history: {e}") 
     return history 
+
+
+def make_pdf_bytes(title, sections):
+    if SimpleDocTemplate is None:
+        return None
+    buffer = BytesIO()
+    styles = getSampleStyleSheet()
+    story = [Paragraph(title, styles["Title"]), Spacer(1, 0.18 * inch)]
+    for heading, body in sections:
+        story.append(Paragraph(str(heading), styles["Heading2"]))
+        for paragraph in str(body).split("\n"):
+            if paragraph.strip():
+                story.append(Paragraph(_html_escape_lib.escape(paragraph.strip()), styles["BodyText"]))
+                story.append(Spacer(1, 0.08 * inch))
+    SimpleDocTemplate(buffer, pagesize=letter, rightMargin=42, leftMargin=42, topMargin=42, bottomMargin=42).build(story)
+    return buffer.getvalue()
+
+
+def make_flashcards_pdf(cards):
+    sections = []
+    for index, card in enumerate(cards, 1):
+        answer = "\n".join(card.get("visual_items", []))
+        sections.append((f"Card {index}: {card.get('front', '')}", f"Topic: {card.get('topic', '')}\n{card.get('visual_title', '')}\n{answer}"))
+    return make_pdf_bytes("Studient AI Flashcards", sections)
+
+
+def make_questions_docx(questions, title="Studient AI Questions"):
+    if Document is None:
+        return None
+    document = Document()
+    document.add_heading(title, 0)
+    for index, question in enumerate(questions, 1):
+        document.add_heading(f"Question {index}", level=2)
+        if isinstance(question, dict):
+            document.add_paragraph(question.get("question", ""))
+            for letter, option in question.get("options", {}).items():
+                document.add_paragraph(f"{letter}) {option}")
+            document.add_paragraph(f"Answer: {question.get('correct', '')}")
+            document.add_paragraph(f"Explanation: {question.get('explanation', '')}")
+        else:
+            document.add_paragraph(str(question))
+    buffer = BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+def make_mindmap_png(mind_map):
+    if Image is None:
+        return None
+    lines = []
+    def walk(node, depth=0):
+        lines.append("  " * depth + ("• " if depth else "") + str(node.get("label", "")))
+        for child in node.get("children", []) or []:
+            walk(child, depth + 1)
+    walk(mind_map)
+    width, line_height = 1400, 34
+    height = max(220, 70 + len(lines) * line_height)
+    image = Image.new("RGB", (width, height), (246, 247, 255))
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle((24, 24, width - 24, height - 24), radius=24, fill=(255, 255, 255), outline=(124, 58, 237), width=3)
+    y = 48
+    for line in lines:
+        draw.text((54, y), line[:115], fill=(31, 41, 75))
+        y += line_height
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def make_study_pack():
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as pack:
+        pack.writestr("workspace.txt", st.session_state.get("pdf_text", ""))
+        if st.session_state.get("summary_text"):
+            pack.writestr("summary.md", st.session_state.summary_text)
+        if st.session_state.get("flashcards"):
+            csv_buffer = StringIO()
+            writer = csv.writer(csv_buffer)
+            writer.writerow(["Front", "Topic", "Visual type", "Visual title", "Visual items"])
+            for card in st.session_state.flashcards:
+                writer.writerow([card.get("front", ""), card.get("topic", ""), card.get("visual_type", ""), card.get("visual_title", ""), " | ".join(card.get("visual_items", []))])
+            pack.writestr("flashcards.csv", csv_buffer.getvalue())
+        if st.session_state.get("mind_map"):
+            pack.writestr("mind-map.json", json.dumps(st.session_state.mind_map, indent=2, ensure_ascii=False))
+        pack.writestr("study-history.json", json.dumps(load_history(), indent=2))
+    return buffer.getvalue()
+
+
+def analytics_snapshot(document_name):
+    history = [item for item in load_history() if item.get("document") == document_name]
+    scores = [round(item["score"] / item["total"] * 100) for item in history if item.get("total")]
+    topic_totals = defaultdict(lambda: {"correct": 0, "total": 0})
+    for attempt in history:
+        for topic, stats in attempt.get("topics", {}).items():
+            topic_totals[topic]["correct"] += stats.get("correct", 0)
+            topic_totals[topic]["total"] += stats.get("correct", 0) + stats.get("wrong", 0)
+    topic_accuracy = {topic: round(data["correct"] / data["total"] * 100) if data["total"] else 0 for topic, data in topic_totals.items()}
+    cards = st.session_state.get("flashcards") or []
+    mastered = sum(1 for card in cards if get_review_card(card).get("box", 1) >= 5)
+    dates = {item.get("timestamp", "")[:10] for item in history if item.get("timestamp")}
+    avg = round(sum(scores) / len(scores)) if scores else 0
+    improvement = scores[-1] - scores[0] if len(scores) > 1 else 0
+    weakest = min(topic_accuracy, key=topic_accuracy.get) if topic_accuracy else "Complete a practice test"
+    return {"attempts": len(history), "average": avg, "scores": scores, "improvement": improvement, "topic_accuracy": topic_accuracy, "mastered": mastered, "cards": len(cards), "questions": sum(item.get("total", 0) for item in history), "sessions": len(dates), "weakest": weakest}
 
 
 def load_summary_history():
@@ -1625,6 +1750,7 @@ defaults = {
     "test_started_at": None,
     "test_timed_out": False,
     "incorrect_questions": [],
+    "important_questions": None, "mcq_questions": None,
 } 
 for k, v in defaults.items(): 
     if k not in st.session_state: 
@@ -1836,6 +1962,9 @@ STUDY MATERIAL:
             st.download_button("⬇️ Download summary as Markdown", result, file_name="studient-summary.md", mime="text/markdown", key="download_summary_markdown")
 
     if st.session_state.get("summary_text"):
+        summary_pdf = make_pdf_bytes("Studient AI Study Summary", [(st.session_state.document_name, st.session_state.summary_text)])
+        if summary_pdf:
+            st.download_button("⬇️ Download summary as PDF", summary_pdf, file_name="studient-summary.pdf", mime="application/pdf", key="download_summary_pdf")
         html('<div class="sm-audio-panel"><div class="sm-audio-title">🔊 Listen to your study summary</div><div class="sm-audio-copy">Choose a language and let Studient AI read the summary aloud while you revise.</div></div>')
         audio_col, button_col = st.columns([1, 1.25])
         with audio_col:
@@ -1850,6 +1979,8 @@ STUDY MATERIAL:
         if st.session_state.get("summary_audio"):
             st.audio(st.session_state.summary_audio, format="audio/mp3")
             st.download_button("⬇️ Download audio summary", st.session_state.summary_audio, file_name="studient-summary.mp3", mime="audio/mpeg", key="download_summary_audio")
+        study_pack = make_study_pack()
+        st.download_button("📦 Download complete study pack", study_pack, file_name="studient-study-pack.zip", mime="application/zip", key="download_study_pack")
  
 # ---------------- IMPORTANT QUESTIONS ---------------- 
 with tabs[1]: 
@@ -1867,9 +1998,13 @@ STUDY MATERIAL:
             result = ask_groq(prompt, max_tokens=1800) 
         if result: 
             lines = [l.strip() for l in result.split("\n") if l.strip()] 
+            st.session_state.important_questions = lines[:question_count]
             for i, q in enumerate(lines[:question_count]): 
                 html(f'<div class="sm-question"><div class="label">Question {i+1}</div></div>') 
                 st.write(q) 
+            questions_docx = make_questions_docx(st.session_state.important_questions, "Important Exam Questions")
+            if questions_docx:
+                st.download_button("⬇️ Export questions as DOCX", questions_docx, file_name="studient-important-questions.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="export_important_docx")
  
 # ---------------- MCQS (interactive JSON, browsable) ---------------- 
 with tabs[2]: 
@@ -1879,11 +2014,15 @@ with tabs[2]:
         with st.spinner("Generating your MCQs..."): 
             questions = generate_quiz_questions(st.session_state.pdf_text, question_count, difficulty) 
         if questions: 
+            st.session_state.mcq_questions = questions
             for i, q in enumerate(questions, 1): 
                 with st.expander(f"Q{i}. {q['question']}"): 
                     for letter, opt in q["options"].items(): 
                         st.write(f"**{letter})** {opt}") 
                     st.success(f"Correct Answer: {q['correct']} — {q['explanation']}") 
+            mcq_docx = make_questions_docx(questions, "Studient AI MCQs")
+            if mcq_docx:
+                st.download_button("⬇️ Export MCQs as DOCX", mcq_docx, file_name="studient-mcqs.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="export_mcq_docx")
  
 # ---------------- FLASHCARDS ---------------- 
 # ---------------- FLASHCARDS ----------------
@@ -1942,6 +2081,9 @@ with tabs[3]:
             review = get_review_card(card)
             writer.writerow([card["front"], card["topic"], card["visual_type"], card["visual_title"], " | ".join(card["visual_items"]), review.get("last_rating", "New"), review.get("due", str(date.today())), review.get("box", 1)])
         st.download_button("⬇️ Export flashcards as CSV", csv_buffer.getvalue(), file_name="studient-flashcards.csv", mime="text/csv", key="export_flashcards_csv")
+        flashcards_pdf = make_flashcards_pdf(flashcards)
+        if flashcards_pdf:
+            st.download_button("⬇️ Export flashcards as PDF", flashcards_pdf, file_name="studient-flashcards.pdf", mime="application/pdf", key="export_flashcards_pdf")
  
 # ---------------- LONG QUESTIONS ---------------- 
 with tabs[4]: 
@@ -1960,6 +2102,9 @@ STUDY MATERIAL:
         if result: 
             html('<div class="sm-card"></div>') 
             st.markdown(result) 
+            long_docx = make_questions_docx([line for line in result.splitlines() if line.strip()], "Long Examination Questions")
+            if long_docx:
+                st.download_button("⬇️ Export long questions as DOCX", long_docx, file_name="studient-long-questions.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="export_long_docx") 
  
 # ---------------- SHORT QUESTIONS ---------------- 
 with tabs[5]: 
@@ -1978,6 +2123,9 @@ STUDY MATERIAL:
         if result: 
             html('<div class="sm-card"></div>') 
             st.markdown(result) 
+            short_docx = make_questions_docx([line for line in result.splitlines() if line.strip()], "Short Questions")
+            if short_docx:
+                st.download_button("⬇️ Export short questions as DOCX", short_docx, file_name="studient-short-questions.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="export_short_docx") 
  
 # ---------------- KEY CONCEPTS ---------------- 
 with tabs[6]: 
@@ -2125,6 +2273,13 @@ with tabs[8]:
                     with st.expander(f"Review incorrect answer {i}: {q.get('question', 'Question')}"):
                         st.write(f"Correct answer: **{q.get('correct', answer.get('answer'))}**")
                         st.caption(q.get("explanation", "Review this concept in your study material."))
+        test_sections = []
+        for i, answer in enumerate(answers, 1):
+            q = answer.get("question", {})
+            test_sections.append((f"Question {i}: {q.get('question', '')}", f"Your answer: {answer.get('chosen', 'Not answered')}\nCorrect answer: {q.get('correct', answer.get('answer', ''))}\nExplanation: {q.get('explanation', '')}"))
+        test_pdf = make_pdf_bytes(f"Studient AI Practice Test — {pct}%", test_sections)
+        if test_pdf:
+            st.download_button("⬇️ Export practice test as PDF", test_pdf, file_name="studient-practice-test.pdf", mime="application/pdf", key="export_practice_test_pdf")
  
         weak = [t for t, s in topic_stats.items() if s["wrong"] > s["correct"]] 
         strong = [t for t, s in topic_stats.items() if s["correct"] > s["wrong"]] 
@@ -2147,34 +2302,37 @@ with tabs[9]:
     history = load_history() 
     doc_history = [h for h in history if h["document"] == st.session_state.document_name] 
  
-    if not doc_history: 
-        html('<div class="sm-card"><p>No test attempts yet for this document. Take a Practice Test to see your analytics here.</p></div>') 
-    else: 
-        scores_pct = [round((h["score"] / h["total"]) * 100) for h in doc_history] 
-        st.markdown("#### Score History") 
-        st.line_chart(scores_pct) 
- 
-        all_topics = Counter() 
-        weak_topics = Counter() 
-        for h in doc_history: 
-            for topic, stats in h["topics"].items(): 
-                all_topics[topic] += stats["correct"] + stats["wrong"] 
-                if stats["wrong"] > stats["correct"]: 
-                    weak_topics[topic] += 1 
- 
-        st.markdown("#### Topics needing the most work") 
-        if weak_topics: 
-            for topic, count in weak_topics.most_common(5): 
-                st.write(f"- **{topic}** — missed more than answered in {count} attempt(s)") 
-        else: 
-            st.write("No consistently weak topics detected yet.") 
- 
-        st.markdown("#### Recommended revision order") 
-        recommended = [t for t, _ in weak_topics.most_common()] or [t for t, _ in all_topics.most_common(3)] 
-        for i, t in enumerate(recommended[:5], 1): 
-            st.write(f"{i}. {t}") 
- 
-        st.caption("Note: history is stored locally to this app instance and resets if the app restarts or redeploys.") 
+    data = analytics_snapshot(st.session_state.document_name)
+    if not doc_history:
+        html('<div class="sm-card"><p>No test attempts yet for this document. Take a Practice Test to see your analytics here.</p></div>')
+    else:
+        metric_cols = st.columns(5)
+        metric_cols[0].metric("Average score", f"{data['average']}%")
+        metric_cols[1].metric("Improvement", f"{data['improvement']:+d}%")
+        metric_cols[2].metric("Questions", data["questions"])
+        metric_cols[3].metric("Sessions", data["sessions"])
+        metric_cols[4].metric("Study time", f"{sum(item.get('duration_minutes', 0) for item in doc_history):.1f} min")
+
+        st.markdown("#### Score improvement over time")
+        st.line_chart(data["scores"])
+        if data["improvement"] > 0:
+            st.success(f"Your score improved by {data['improvement']}% across your recorded attempts.")
+        elif data["improvement"] < 0:
+            st.info(f"Your score changed by {data['improvement']}%. Review the weakest concepts before retaking the test.")
+
+        st.markdown("#### Topic-level accuracy")
+        if data["topic_accuracy"]:
+            st.bar_chart(data["topic_accuracy"])
+            topic_text = " · ".join(f"{topic}: {accuracy}%" for topic, accuracy in sorted(data["topic_accuracy"].items(), key=lambda item: item[1]))
+            st.caption(topic_text)
+
+        st.markdown("#### Flashcard mastery")
+        mastery_pct = round(data["mastered"] / data["cards"] * 100) if data["cards"] else 0
+        st.progress(mastery_pct / 100, text=f"{data['mastered']}/{data['cards']} mastered · {mastery_pct}%")
+
+        st.markdown("#### Recommended next topic")
+        st.info(f"Review **{data['weakest']}** next, then practice the related flashcards before your next test.")
+        st.caption("Analytics are stored locally to this app instance and reset if the app restarts or redeploys.")
  
 
 # ---------------- INTERACTIVE MIND MAP ----------------
@@ -2194,6 +2352,9 @@ with tabs[10]:
     if st.session_state.get("mind_map"):
         render_mind_map(st.session_state.mind_map)
         st.download_button("⬇️ Export mind map as JSON", json.dumps(st.session_state.mind_map, indent=2, ensure_ascii=False), file_name="studient-mind-map.json", mime="application/json", key="export_mind_map_json")
+        mindmap_png = make_mindmap_png(st.session_state.mind_map)
+        if mindmap_png:
+            st.download_button("⬇️ Export mind map as PNG", mindmap_png, file_name="studient-mind-map.png", mime="image/png", key="export_mind_map_png")
     else:
         html('<div class="sm-card"><p>Generate a mind map to explore your document visually. Each branch is grounded in the uploaded material.</p></div>')
 
