@@ -1632,6 +1632,46 @@ def analytics_snapshot(document_name):
     return {"attempts": len(history), "average": avg, "scores": scores, "improvement": improvement, "topic_accuracy": topic_accuracy, "mastered": mastered, "cards": len(cards), "questions": sum(item.get("total", 0) for item in history), "sessions": len(dates), "weakest": weakest}
 
 
+def generate_study_plan(exam_date, target_grade, hours_per_day, weak_subjects, schedule):
+    days_left = max(1, (exam_date - date.today()).days)
+    context = get_relevant_chunks(st.session_state.pdf_text, weak_subjects or "all major topics", max_chunks=8)
+    prompt = f"""Create a practical personalized study plan grounded in the workspace material below.
+Exam date: {exam_date} ({days_left} days from today)
+Target grade: {target_grade}
+Available study time: {hours_per_day} hours per day
+Weak subjects or topics: {weak_subjects or 'Identify from the material'}
+Preferred schedule: {schedule}
+
+Include: a clear phase overview, daily tasks, revision blocks, practice tests, flashcard reviews, rest/buffer days, and a final revision plan. Keep tasks realistic for the available time. Use markdown headings and a day-by-day table where useful.
+
+WORKSPACE MATERIAL:
+{context}"""
+    return ask_groq(prompt, max_tokens=4200)
+
+
+def tutor_reply(question, level, mode, conversation):
+    context = get_relevant_chunks(st.session_state.pdf_text, question, max_chunks=7)
+    previous = "\n".join(f"{item['role']}: {item['content']}" for item in conversation[-6:])
+    prompt = f"""You are Studient AI Tutor. Teach using the workspace material as the primary source.
+Student level: {level}
+Tutor mode: {mode}
+Student question: {question}
+Recent conversation:
+{previous}
+
+Rules:
+- In Socratic mode, do not immediately reveal the final answer. Ask one guiding question and give a small hint.
+- In Hint mode, give a progressive hint, then ask the student to try again.
+- In Explain mode, explain clearly at the student's level and offer a second analogy or representation.
+- Detect likely misconceptions and label them gently as "Possible misconception" when relevant.
+- If the workspace does not contain the answer, say so instead of inventing a document fact.
+- End with one short check-for-understanding question.
+
+WORKSPACE CONTEXT:
+{context}"""
+    return ask_groq(prompt, max_tokens=1800)
+
+
 def load_summary_history():
     if os.path.exists(SUMMARY_HISTORY_FILE):
         try:
@@ -1783,6 +1823,7 @@ defaults = {
     "test_timed_out": False,
     "incorrect_questions": [],
     "important_questions": None, "mcq_questions": None,
+    "study_plan": None, "tutor_messages": [], "tutor_level": "Intermediate",
 } 
 for k, v in defaults.items(): 
     if k not in st.session_state: 
@@ -1983,7 +2024,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 tabs = st.tabs([ 
     "📚 Summary", "📝 Questions", "❓ MCQs", "🎴 Flashcards", 
     "📖 Long Questions", "🎯 Short Questions", "🔍 Key Concepts", 
-    "📊 Difficulty", "🧪 Practice Test", "📈 Analytics", "🧠 Mind Map", "💬 Ask PDF", 
+    "📊 Difficulty", "🧪 Practice Test", "📈 Analytics", "🧠 Mind Map", "💬 Ask PDF", "🗓️ Study Plan", "🧑‍🏫 AI Tutor",
 ]) 
  
 # ---------------- SUMMARY ---------------- 
@@ -2471,7 +2512,55 @@ STUDENT QUESTION:
                 title = "🤖 StudientAI Answer" if not use_general_knowledge else "🤖 StudientAI Answer (PDF + general knowledge)" 
                 html(f'<div class="sm-answer"><div class="title">{title}</div></div>') 
                 st.markdown(answer) 
- 
+
+# ---------------- STUDY PLAN ----------------
+with tabs[12]:
+    st.header("🗓️ Personalized Study Plan")
+    st.caption("Turn your exam date, goals, availability, and weak topics into a practical daily plan grounded in your workspace.")
+    plan_col1, plan_col2 = st.columns(2)
+    with plan_col1:
+        exam_date = st.date_input("Exam date", value=date.today() + timedelta(days=14), min_value=date.today(), key="plan_exam_date")
+        target_grade = st.selectbox("Target grade", ["Pass", "B / Good", "A / Excellent", "A+ / Distinction"], key="plan_target_grade")
+        hours_per_day = st.number_input("Available hours per day", min_value=0.5, max_value=12.0, value=2.0, step=0.5, key="plan_hours")
+    with plan_col2:
+        weak_subjects = st.text_area("Weak subjects or topics", placeholder="e.g. cellular respiration, processes, formulas", key="plan_weak_subjects")
+        schedule = st.multiselect("Preferred study schedule", ["Morning", "Afternoon", "Evening", "Weekdays", "Weekends", "Short focused sessions"], default=["Evening", "Weekdays"], key="plan_schedule")
+    if st.button("✨ Generate my study plan", key="generate_study_plan"):
+        with st.spinner("Designing your personalized plan..."):
+            st.session_state.study_plan = generate_study_plan(exam_date, target_grade, hours_per_day, weak_subjects, ", ".join(schedule))
+        st.rerun()
+    if st.session_state.get("study_plan"):
+        html('<div class="sm-answer"><div class="title">🗓️ Your personalized study plan</div></div>')
+        st.markdown(st.session_state.study_plan)
+        st.download_button("⬇️ Download study plan", st.session_state.study_plan, file_name="studient-study-plan.md", mime="text/markdown", key="download_study_plan")
+
+# ---------------- AI TUTOR ----------------
+with tabs[13]:
+    st.header("🧑‍🏫 AI Tutor")
+    st.caption("Learn through guided questions, progressive hints, and explanations grounded in your workspace.")
+    tutor_col1, tutor_col2 = st.columns(2)
+    with tutor_col1:
+        tutor_level = st.selectbox("Your level", ["Beginner", "Intermediate", "Advanced", "University exam"], key="tutor_level")
+    with tutor_col2:
+        tutor_mode = st.selectbox("Tutor mode", ["Socratic questions", "Progressive hints", "Explain with analogies"], key="tutor_mode")
+    if st.session_state.tutor_messages:
+        for message in st.session_state.tutor_messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+    tutor_question = st.text_area("Ask your tutor", placeholder="I don't understand how this process works...", key="tutor_question")
+    if st.button("🧑‍🏫 Ask tutor", key="ask_tutor"):
+        if not tutor_question.strip():
+            st.warning("Ask a question so the tutor can guide you.")
+        else:
+            with st.spinner("Your tutor is thinking..."):
+                reply = tutor_reply(tutor_question, tutor_level, tutor_mode, st.session_state.tutor_messages)
+            if reply:
+                st.session_state.tutor_messages.extend([{ "role": "user", "content": tutor_question }, { "role": "assistant", "content": reply }])
+                st.rerun()
+    if st.session_state.tutor_messages and st.button("🧹 Clear tutor conversation", key="clear_tutor"):
+        st.session_state.tutor_messages = []
+        st.rerun()
+
 # ============================================================ 
 # FOOTER 
 # ============================================================ 
