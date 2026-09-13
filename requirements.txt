@@ -3,3 +3,4 @@ groq
 pypdf
 python-docx
 python-pptx
+gTTS
