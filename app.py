@@ -32,6 +32,8 @@ import re
 import json 
 import os 
 import hashlib
+import random
+import time
 import html as _html_escape_lib  # aliased: this file defines its own html() render helper below 
 from io import BytesIO, StringIO
 import csv
@@ -658,7 +660,7 @@ hr { border-color: rgba(79,70,229,.12); }
 .sm-progress-orb-content { position:relative; text-align:center; color:var(--ink); }
 .sm-progress-number { display:block; font-size:27px; font-weight:850; letter-spacing:-1px; }
 .sm-progress-label { display:block; color:var(--ink-faint); font-size:10px; font-weight:750; }
-.sm-dashboard { margin:0 0 24px; padding:28px; border-radius:30px; background:linear-gradient(125deg,rgba(255,255,255,.72),rgba(224,231,255,.52) 46%,rgba(253,242,255,.62)); border:1px solid rgba(255,255,255,.8); box-shadow:0 20px 52px rgba(31,25,90,.16), inset 0 1px 0 rgba(255,255,255,.9); }
+.sm-dashboard { margin:0 0 24px; padding:28px; border-radius:30px; background:linear-gradient(125deg,rgba(255,255,255,.72),rgba(224,231,255,.52) 46%,rgba(253,242,255,.62)); border:1px solid rgba(255,255,255,.8); box-shadow:0 20px 52px rgba(31,25,90,.16), inset 0 1px 0 rgba(255,255,255,.9); overflow:hidden; }
 .sm-dashboard-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; flex-wrap:wrap; margin-bottom:24px; }
 .sm-dashboard-heading h2 { margin:4px 0 4px; color:var(--ink); font-size:26px; letter-spacing:-.8px; }
 .sm-dashboard-heading p { margin:0; color:var(--ink-faint); font-size:13px; }
@@ -683,7 +685,8 @@ hr { border-color: rgba(79,70,229,.12); }
 .sm-dashboard-row span:last-child { color:var(--ink-faint); font-size:10px; }
 .sm-dashboard-summary { display:block; }
 .sm-dashboard-summary b { display:block; color:var(--ink); margin-bottom:3px; }
-.sm-dashboard-summary span { display:block; color:var(--ink-faint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sm-dashboard-summary span { display:block; color:var(--ink-faint); overflow-wrap:anywhere; word-break:break-word; white-space:normal; line-height:1.45; max-height:3.1em; overflow:hidden; }
+.sm-dashboard-row span:first-child { min-width:0; overflow-wrap:anywhere; word-break:break-word; }
 .sm-dashboard-empty { padding:12px; border-radius:12px; background:rgba(255,255,255,.32); color:var(--ink-faint); font-size:12px; }
 @media (max-width: 1050px) { .sm-dashboard-grid { grid-template-columns:repeat(2,1fr); } .sm-dashboard-gauge { grid-column:span 2; } }
 @media (max-width: 640px) { .sm-dashboard { padding:20px; } .sm-dashboard-grid, .sm-dashboard-columns { grid-template-columns:1fr; } .sm-dashboard-gauge { grid-column:auto; } }
@@ -989,9 +992,10 @@ def _strip_json_fences(raw):
     return raw 
  
  
-def generate_quiz_questions(text, count, difficulty): 
-    context = get_relevant_chunks(text, "important exam concepts facts definitions processes", max_chunks=10) 
-    prompt = f"""Create exactly {count} multiple-choice questions at {difficulty} difficulty 
+def generate_quiz_questions(text, count, difficulty, category="Mixed"):
+    category_focus = {"Mixed": "important exam concepts facts definitions processes", "Definitions": "definitions terms meanings", "Processes": "processes mechanisms steps cause effect", "Comparisons": "comparisons differences similarities", "Facts": "important facts values examples", "Exam-focused": "high priority exam concepts likely questions"}.get(category, "important concepts")
+    context = get_relevant_chunks(text, category_focus, max_chunks=10) 
+    prompt = f"""Create exactly {count} multiple-choice questions at {difficulty} difficulty in the {category} category
 from the study material below. Return ONLY the JSON array described in the system message. 
  
 STUDY MATERIAL: 
@@ -1002,8 +1006,14 @@ STUDY MATERIAL:
         return None 
     try: 
         data = json.loads(_strip_json_fences(raw)) 
-        cleaned = [q for q in data if all(k in q for k in ("question", "options", "correct", "explanation", "topic")) 
-                   and all(k in q["options"] for k in ("A", "B", "C", "D"))] 
+        cleaned = [q for q in data if all(k in q for k in ("question", "options", "correct", "explanation", "topic"))
+                   and all(k in q["options"] for k in ("A", "B", "C", "D"))]
+        for q in cleaned:
+            correct_text = q["options"][q["correct"]]
+            options = list(q["options"].values())
+            random.shuffle(options)
+            q["options"] = dict(zip(("A", "B", "C", "D"), options))
+            q["correct"] = next(letter for letter, value in q["options"].items() if value == correct_text)
         return cleaned or None 
     except Exception as e: 
         st.error(f"Couldn't parse the generated quiz as JSON: {e}") 
@@ -1608,6 +1618,13 @@ defaults = {
     "flashcards": None, "flashcard_status": {},
     "workspace_documents": {}, "review_state": load_review_state(),
     "workspace_name": "My Study Workspace",
+    "test_category": "Mixed",
+    "timed_mode": False,
+    "test_time_limit": 10,
+    "negative_marking": False,
+    "test_started_at": None,
+    "test_timed_out": False,
+    "incorrect_questions": [],
 } 
 for k, v in defaults.items(): 
     if k not in st.session_state: 
@@ -1633,6 +1650,8 @@ def reset_quiz():
     st.session_state.quiz_answers = [] 
     st.session_state.quiz_locked = False 
     st.session_state.quiz_finished = False 
+    st.session_state.test_started_at = None
+    st.session_state.test_timed_out = False
  
  
 def metric_card(chip_class, icon, label, value): 
@@ -1718,6 +1737,12 @@ with st.sidebar:
     st.markdown("### ⚙️ Study Settings") 
     question_count = st.slider("Number of questions", 3, 15, 5) 
     difficulty = st.selectbox("Difficulty", ["Easy", "Medium", "Hard", "University Exam"]) 
+    st.markdown("#### 🧪 Practice test options")
+    test_category = st.selectbox("Test category", ["Mixed", "Definitions", "Processes", "Comparisons", "Facts", "Exam-focused"], key="test_category")
+    timed_mode = st.checkbox("Timed mode", key="timed_mode")
+    if timed_mode:
+        st.selectbox("Time limit", [5, 10, 15, 20, 30], key="test_time_limit", format_func=lambda value: f"{value} minutes")
+    st.checkbox("Negative marking", key="negative_marking", help="Wrong answers reduce the final score by 0.25 points.")
  
     st.divider() 
     if st.button("🔄 Reset Test"): 
@@ -1996,21 +2021,42 @@ with tabs[8]:
     st.caption("Answers are hidden until you submit each question — no peeking.") 
  
     if st.session_state.quiz_questions is None: 
+        if st.session_state.get("incorrect_questions"):
+            if st.button("🔁 Retake Incorrect Questions", key="retake_incorrect"):
+                st.session_state.quiz_questions = st.session_state.incorrect_questions
+                st.session_state.quiz_index = 0
+                st.session_state.quiz_answers = []
+                st.session_state.quiz_locked = False
+                st.session_state.quiz_finished = False
+                st.session_state.test_started_at = time.time()
+                st.session_state.test_timed_out = False
+                st.rerun()
         if st.button("🚀 Start New Test", key="start_test"): 
             with st.spinner("Preparing your practice test..."): 
-                questions = generate_quiz_questions(st.session_state.pdf_text, question_count, difficulty) 
+                questions = generate_quiz_questions(st.session_state.pdf_text, question_count, difficulty, st.session_state.test_category) 
             if questions: 
                 st.session_state.quiz_questions = questions 
                 st.session_state.quiz_index = 0 
                 st.session_state.quiz_answers = [] 
                 st.session_state.quiz_locked = False 
                 st.session_state.quiz_finished = False 
+                st.session_state.test_started_at = time.time()
+                st.session_state.test_timed_out = False
                 st.rerun() 
  
     elif not st.session_state.quiz_finished: 
         questions = st.session_state.quiz_questions 
         idx = st.session_state.quiz_index 
         q = questions[idx] 
+
+        if st.session_state.timed_mode:
+            elapsed = int(time.time() - (st.session_state.test_started_at or time.time()))
+            remaining = max(0, st.session_state.test_time_limit * 60 - elapsed)
+            st.progress(remaining / (st.session_state.test_time_limit * 60), text=f"Time remaining: {remaining // 60:02d}:{remaining % 60:02d}")
+            if remaining == 0:
+                st.session_state.test_timed_out = True
+                st.session_state.quiz_finished = True
+                st.rerun()
  
         html(f'<div class="sm-quiz-progress">Question {idx + 1} of {len(questions)}</div>') 
         html(f'<div class="sm-quiz-topic">{q["topic"]}</div>') 
@@ -2026,7 +2072,7 @@ with tabs[8]:
                 is_correct = chosen_letter == q["correct"] 
                 st.session_state.quiz_answers.append({ 
                     "topic": q["topic"], "correct": is_correct, 
-                    "chosen": chosen_letter, "answer": q["correct"], 
+                    "chosen": chosen_letter, "answer": q["correct"], "question": q,
                 }) 
                 st.session_state.quiz_locked = True 
                 st.rerun() 
@@ -2052,7 +2098,10 @@ with tabs[8]:
         answers = st.session_state.quiz_answers 
         score = sum(1 for a in answers if a["correct"]) 
         total = len(answers) 
-        pct = round((score / total) * 100) if total else 0 
+        penalty = sum(0.25 for a in answers if not a["correct"]) if st.session_state.negative_marking else 0
+        final_points = max(0, score - penalty)
+        pct = round((final_points / total) * 100) if total else 0
+        st.session_state.incorrect_questions = [a.get("question") for a in answers if not a["correct"] and a.get("question")]
  
         topic_stats = defaultdict(lambda: {"correct": 0, "wrong": 0}) 
         for a in answers: 
@@ -2062,8 +2111,20 @@ with tabs[8]:
             save_attempt(st.session_state.document_name, score, total, dict(topic_stats)) 
             st.session_state["last_saved_index"] = id(answers) 
  
-        verdict = "Excellent! 🔥" if pct >= 80 else "Good work 👍" if pct >= 60 else "Keep practicing 💪" 
-        html(f'<div class="sm-score-hero"><div class="big">{score}/{total}</div><div class="pct">{pct}% — {verdict}</div></div>') 
+        verdict = "Excellent! 🔥" if pct >= 80 else "Good work 👍" if pct >= 60 else "Keep practicing 💪"
+        adaptive = "Try a harder difficulty next time." if pct >= 85 else "Review missed concepts before your next test." if pct < 60 else "Stay at this difficulty and build consistency."
+        timing_note = " Time expired." if st.session_state.test_timed_out else ""
+        html(f'<div class="sm-score-hero"><div class="big">{final_points:g}/{total}</div><div class="pct">{pct}% — {verdict}{timing_note}</div><div style="margin-top:8px;color:var(--ink-faint);font-size:13px;">{adaptive}</div></div>')
+        if st.session_state.negative_marking:
+            st.caption(f"Negative marking enabled: {penalty:.2f} point(s) deducted.")
+        if st.session_state.incorrect_questions:
+            st.markdown(f"**{len(st.session_state.incorrect_questions)} incorrect question(s)** are ready for a focused retake.")
+            for i, answer in enumerate(answers, 1):
+                if not answer["correct"]:
+                    q = answer.get("question", {})
+                    with st.expander(f"Review incorrect answer {i}: {q.get('question', 'Question')}"):
+                        st.write(f"Correct answer: **{q.get('correct', answer.get('answer'))}**")
+                        st.caption(q.get("explanation", "Review this concept in your study material."))
  
         weak = [t for t, s in topic_stats.items() if s["wrong"] > s["correct"]] 
         strong = [t for t, s in topic_stats.items() if s["correct"] > s["wrong"]] 
