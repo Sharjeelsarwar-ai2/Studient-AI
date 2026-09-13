@@ -32,8 +32,14 @@ import re
 import json 
 import os 
 import html as _html_escape_lib  # aliased: this file defines its own html() render helper below 
+from io import BytesIO
 from datetime import datetime 
 from collections import Counter, defaultdict 
+
+try:
+    from gtts import gTTS
+except ImportError:
+    gTTS = None
  
 # ============================================================ 
 # PAGE CONFIG 
@@ -574,27 +580,31 @@ section[data-testid="stSidebar"] {
 .sm-mindmap-root > .sm-mindmap-children { margin-left:36px; }
 
 /* SECOND UI POLISH PASS — preserve Streamlit's classic typography */
-.stApp { min-height: 100vh; }
+.stApp { min-height: 100vh; background-color: #eef0fb; }
+.stApp > header, [data-testid="stHeader"] { background: rgba(244,246,255,.52) !important; backdrop-filter: blur(22px) saturate(165%); -webkit-backdrop-filter: blur(22px) saturate(165%); border-bottom: 1px solid rgba(255,255,255,.62); box-shadow: 0 6px 24px rgba(31,25,90,.07); }
+[data-testid="stToolbar"] { background: rgba(255,255,255,.18); border-radius: 12px; }
+[data-testid="stDecoration"] { background: linear-gradient(90deg, var(--accent1), var(--accent2), var(--accent4), var(--gold)) !important; height: 3px !important; }
+[data-testid="stStatusWidget"] { background: rgba(255,255,255,.5); border: 1px solid rgba(255,255,255,.7); border-radius: 12px; backdrop-filter: blur(14px); }
 .main .block-container { max-width: 1500px; padding: 2.25rem 2.25rem 4rem; }
 section[data-testid="stSidebar"] > div { padding: 1.5rem 1.15rem 2rem; }
 section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .7rem; }
-.sm-hero { padding: 54px 34px 48px; margin-bottom: 30px; border-radius: 32px; }
+.sm-hero { padding: 54px 34px 48px; margin-bottom: 30px; border-radius: 32px; background: linear-gradient(135deg, rgba(255,255,255,.86), rgba(226,232,255,.62) 52%, rgba(253,232,246,.66)); box-shadow: 0 18px 55px rgba(31,25,90,.18), inset 0 1px 0 rgba(255,255,255,.85); }
 .sm-hero h1 { font-size: clamp(38px, 4vw, 58px); letter-spacing: -2.4px; }
 .sm-hero p.sub { font-size: 19px; letter-spacing: -.2px; }
 .sm-hero p.desc { font-size: 15.5px; line-height: 1.7; }
-.sm-card { padding: 28px; border-radius: 24px; }
-.sm-feature { min-height: 175px; padding: 25px; border-radius: 22px; }
+.sm-card { padding: 28px; border-radius: 24px; background: linear-gradient(145deg, rgba(255,255,255,.78), rgba(239,242,255,.56)); box-shadow: 0 15px 38px rgba(31,25,90,.13), inset 0 1px 0 rgba(255,255,255,.8); }
+.sm-feature { min-height: 175px; padding: 25px; border-radius: 22px; background: linear-gradient(145deg, rgba(255,255,255,.78), rgba(235,239,255,.55)); box-shadow: 0 13px 30px rgba(31,25,90,.12), inset 0 1px 0 rgba(255,255,255,.82); }
 .sm-feature .icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 15px; background: rgba(79,70,229,.1); font-size: 25px; }
 .sm-feature .title { margin-top: 14px; font-size: 19px; }
 .sm-hero, .sm-card, .sm-feature, .sm-metric, .sm-document-bar { animation: smFadeUp .48s ease both; }
 @keyframes smFadeUp { from { opacity:0; transform:translateY(7px); } to { opacity:1; transform:translateY(0); } }
 .sm-hero::after { content:""; position:absolute; width:180px; height:180px; right:-55px; top:-75px; border-radius:50%; background:rgba(255,255,255,.22); filter:blur(2px); animation:smGlow 7s ease-in-out infinite alternate; pointer-events:none; }
 @keyframes smGlow { from { transform:translate3d(-8px,8px,0); opacity:.35; } to { transform:translate3d(12px,-5px,0); opacity:.7; } }
-.sm-metric { padding: 22px 24px; border-radius: 22px; transition: transform .18s ease, box-shadow .18s ease; }
+.sm-metric { padding: 22px 24px; border-radius: 22px; background: linear-gradient(145deg, rgba(255,255,255,.82), rgba(232,238,255,.58)); box-shadow: 0 13px 32px rgba(31,25,90,.13), inset 0 1px 0 rgba(255,255,255,.86); transition: transform .18s ease, box-shadow .18s ease; }
 .sm-metric:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(31,25,90,.16); }
 .sm-metric .value { font-size: clamp(25px, 2.3vw, 35px); letter-spacing: -.8px; }
 .stTabs { margin-top: 8px; }
-.stTabs [data-baseweb="tab-list"] { gap: 6px; padding: 8px; border-radius: 20px; position: sticky; top: .5rem; z-index: 5; }
+.stTabs [data-baseweb="tab-list"] { gap: 6px; padding: 8px; border-radius: 20px; position: sticky; top: 3.25rem; z-index: 5; background: rgba(255,255,255,.62); box-shadow: 0 12px 30px rgba(31,25,90,.13), inset 0 1px 0 rgba(255,255,255,.82); }
 .stTabs [data-baseweb="tab"] { min-height: 42px; padding: 10px 16px; font-size: 13px; transition: background .18s ease, color .18s ease, transform .18s ease; }
 .stTabs [data-baseweb="tab"]:hover { color: var(--accent1); background: rgba(79,70,229,.08); }
 .stTabs [aria-selected="true"] { box-shadow: 0 8px 18px rgba(79,70,229,.24) !important; }
@@ -617,6 +627,9 @@ hr { border-color: rgba(79,70,229,.12); }
 .sm-document-name span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sm-document-meta { color:var(--ink-faint); font-size:12px; font-weight:750; }
 .sm-footer { opacity:.8; }
+.sm-audio-panel { margin-top:20px; padding:20px; border-radius:20px; background:linear-gradient(135deg,rgba(224,231,255,.72),rgba(253,242,255,.72)); border:1px solid rgba(124,58,237,.16); box-shadow:0 12px 28px rgba(31,25,90,.1), inset 0 1px 0 rgba(255,255,255,.8); }
+.sm-audio-title { color:var(--ink); font-size:16px; font-weight:750; margin-bottom:5px; }
+.sm-audio-copy { color:var(--ink-faint); font-size:12px; margin-bottom:12px; }
 @media (max-width: 900px) { .main .block-container { padding: 1.25rem 1rem 3rem; } .stTabs [data-baseweb="tab-list"] { position: static; } }
 @media (max-width: 640px) { .sm-hero { padding: 40px 18px 34px; border-radius: 24px; } .sm-hero h1 { font-size: 38px; } .sm-hero p.sub { font-size: 16px; } .sm-feature { min-height: 0; } .sm-document-name { font-size: 17px; } }
 </style> 
@@ -661,6 +674,20 @@ def ask_groq(prompt, system_message=None, max_tokens=2000):
             continue 
     st.error(f"Groq API error: {last_error}") 
     return "" 
+
+
+def generate_speech_audio(text, language="en"):
+    """Create MP3 audio bytes for a study passage using the optional gTTS backend."""
+    if gTTS is None:
+        st.error("Text-to-speech is not installed. Add gTTS to requirements.txt and redeploy.")
+        return None
+    try:
+        audio_buffer = BytesIO()
+        gTTS(text=text, lang=language, slow=False).write_to_fp(audio_buffer)
+        return audio_buffer.getvalue()
+    except Exception as e:
+        st.error(f"Could not create audio: {e}")
+        return None
  
  
 # ============================================================
@@ -1338,7 +1365,8 @@ def save_attempt(document_name, score, total, topic_results):
 defaults = { 
     "pdf_text": "", "document_name": "", "document_type": "", "document_signature": "", 
     "quiz_questions": None, "quiz_index": 0, "quiz_answers": [], 
-    "quiz_locked": False, "quiz_finished": False, "mind_map": None, 
+    "quiz_locked": False, "quiz_finished": False, "mind_map": None,
+    "summary_text": "", "summary_audio": None,
 } 
 for k, v in defaults.items(): 
     if k not in st.session_state: 
@@ -1403,6 +1431,8 @@ with st.sidebar:
                 st.session_state.document_name = uploaded_file.name
                 st.session_state.document_type = detected_type
                 st.session_state.document_signature = signature
+                st.session_state.summary_text = ""
+                st.session_state.summary_audio = None
                 reset_quiz()
         if st.session_state.pdf_text:
             label = SUPPORTED_LABELS.get(st.session_state.document_type, "document")
@@ -1500,8 +1530,25 @@ STUDY MATERIAL:
         with st.spinner("Studient AI is analyzing your material..."): 
             result = ask_groq(prompt, max_tokens=2600) 
         if result: 
+            st.session_state.summary_text = result
+            st.session_state.summary_audio = None
             html(f'<div class="sm-answer"><div class="title">📚 AI Study Summary</div></div>') 
             st.markdown(result) 
+
+    if st.session_state.get("summary_text"):
+        html('<div class="sm-audio-panel"><div class="sm-audio-title">🔊 Listen to your study summary</div><div class="sm-audio-copy">Choose a language and let Studient AI read the summary aloud while you revise.</div></div>')
+        audio_col, button_col = st.columns([1, 1.25])
+        with audio_col:
+            speech_language = st.selectbox("Reading language", ["English", "Hindi", "Urdu", "Spanish", "French"], key="summary_speech_language")
+        speech_codes = {"English": "en", "Hindi": "hi", "Urdu": "ur", "Spanish": "es", "French": "fr"}
+        with button_col:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("🎧 Generate audio reading", key="generate_summary_audio"):
+                with st.spinner("Preparing your audio summary..."):
+                    st.session_state.summary_audio = generate_speech_audio(st.session_state.summary_text, speech_codes[speech_language])
+        if st.session_state.get("summary_audio"):
+            st.audio(st.session_state.summary_audio, format="audio/mp3")
+            st.download_button("⬇️ Download audio summary", st.session_state.summary_audio, file_name="studient-summary.mp3", mime="audio/mpeg", key="download_summary_audio")
  
 # ---------------- IMPORTANT QUESTIONS ---------------- 
 with tabs[1]: 
