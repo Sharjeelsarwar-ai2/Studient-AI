@@ -725,6 +725,11 @@ hr { border-color: rgba(79,70,229,.12); }
 .stTabs [data-baseweb="tab"] { white-space:nowrap; }
 .stButton > button, .stDownloadButton > button { box-shadow:0 5px 14px rgba(31,25,90,.07); transition:transform .16s ease, box-shadow .16s ease; }
 .stButton > button:hover, .stDownloadButton > button:hover { transform:translateY(-1px); box-shadow:0 8px 18px rgba(79,70,229,.16); }
+.sm-sr-only { position:absolute !important; width:1px !important; height:1px !important; padding:0 !important; margin:-1px !important; overflow:hidden !important; clip:rect(0,0,0,0) !important; white-space:nowrap !important; border:0 !important; }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex="0"]:focus-visible { outline:3px solid #0ea5e9 !important; outline-offset:3px !important; box-shadow:0 0 0 5px rgba(14,165,233,.18) !important; }
+label.sm-flip-inner { cursor:pointer; }
+label.sm-flip-inner:focus-within { outline:3px solid #0ea5e9; outline-offset:5px; border-radius:20px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; scroll-behavior:auto !important; } }
 .stMarkdown, [data-testid="stMarkdownContainer"] { overflow-wrap:anywhere; }
 .stDataFrame, [data-testid="stMetric"] { border:1px solid rgba(124,58,237,.10); box-shadow:0 8px 22px rgba(31,25,90,.06); }
 @media (max-width: 1050px) { .sm-dashboard-grid { grid-template-columns:repeat(2,1fr); } .sm-dashboard-gauge { grid-column:span 2; } }
@@ -1338,10 +1343,14 @@ def render_flashcards(cards):
           <label
             for="flipcard_{i}"
             class="sm-flip-inner"
+            tabindex="0"
+            aria-label="Flashcard {i + 1}: {front}. Press space or enter to reveal the answer."
           >
 
             <!-- FRONT -->
             <div class="sm-flip-front">
+
+              <span class="sm-sr-only">Flashcard {i + 1}. Question: {front}. Press the spacebar or Enter to flip this card.</span>
 
               <div>
                 <div class="sm-quiz-topic">
@@ -1762,6 +1771,7 @@ defaults = {
     "quiz_locked": False, "quiz_finished": False, "mind_map": None,
     "summary_text": "", "summary_audio": None,
     "theme_mode": "Light", "reduced_motion": False,
+    "high_contrast": False, "font_scale": "Default",
     "flashcards": None, "flashcard_status": {},
     "workspace_documents": {}, "review_state": load_review_state(),
     "workspace_name": "My Study Workspace",
@@ -1788,6 +1798,17 @@ if st.session_state.theme_mode == "Dark":
     .stTabs [data-baseweb="tab-list"] { background:rgba(30,41,75,.68) !important; }
     </style>
     """)
+if st.session_state.high_contrast:
+    html("""
+    <style>
+    :root { --ink:#111827; --ink-soft:#1f2937; --ink-faint:#374151; --glass-border:rgba(17,24,39,.38); }
+    .stApp { filter:saturate(1.18) contrast(1.06); }
+    .sm-card,.sm-dashboard,.sm-feature,.sm-metric,.sm-document-bar,.sm-progress-dashboard { border-color:rgba(17,24,39,.32) !important; }
+    .stCaption, [data-testid="stCaptionContainer"] { color:#374151 !important; }
+    </style>
+    """)
+font_scale_values = {"Small": ".92", "Default": "1", "Large": "1.10", "Extra large": "1.22"}
+html(f'<style>:root {{ --sm-font-scale:{font_scale_values.get(st.session_state.font_scale, "1")}; }} .stApp {{ font-size:calc(1rem * var(--sm-font-scale)); }} .sm-card, .sm-dashboard, .sm-feature, .sm-document-bar {{ font-size:calc(1em * var(--sm-font-scale)); }}</style>')
 if st.session_state.reduced_motion:
     html("<style>* { animation-duration:0.001ms !important; transition-duration:0.001ms !important; }</style>")
  
@@ -1841,9 +1862,13 @@ with st.sidebar:
     """)
     selected_theme = st.selectbox("Appearance", ["Light", "Dark"], index=0 if st.session_state.theme_mode == "Light" else 1)
     reduced_motion = st.checkbox("Reduce animations", value=st.session_state.reduced_motion)
-    if selected_theme != st.session_state.theme_mode or reduced_motion != st.session_state.reduced_motion:
+    high_contrast = st.checkbox("High contrast", value=st.session_state.high_contrast, help="Increase contrast for text, borders, and surfaces.")
+    font_scale = st.selectbox("Text size", ["Small", "Default", "Large", "Extra large"], index=["Small", "Default", "Large", "Extra large"].index(st.session_state.font_scale))
+    if selected_theme != st.session_state.theme_mode or reduced_motion != st.session_state.reduced_motion or high_contrast != st.session_state.high_contrast or font_scale != st.session_state.font_scale:
         st.session_state.theme_mode = selected_theme
         st.session_state.reduced_motion = reduced_motion
+        st.session_state.high_contrast = high_contrast
+        st.session_state.font_scale = font_scale
         st.rerun()
     workspace_name = st.text_input("Workspace name", value=st.session_state.get("workspace_name", "My Study Workspace"), label_visibility="collapsed", placeholder="Name this course workspace")
     uploaded_files = st.file_uploader("Choose study materials", type=SUPPORTED_TYPES, accept_multiple_files=True, label_visibility="collapsed", help="Upload multiple PDF, DOCX, PPTX, TXT, or Markdown files")
@@ -2345,6 +2370,7 @@ with tabs[9]:
 
         st.markdown("#### Score improvement over time")
         st.line_chart(data["scores"])
+        st.caption("Accessible chart description: each point represents your percentage score for a completed practice test, ordered from oldest to newest.")
         if data["improvement"] > 0:
             st.success(f"Your score improved by {data['improvement']}% across your recorded attempts.")
         elif data["improvement"] < 0:
@@ -2354,7 +2380,7 @@ with tabs[9]:
         if data["topic_accuracy"]:
             st.bar_chart(data["topic_accuracy"])
             topic_text = " · ".join(f"{topic}: {accuracy}%" for topic, accuracy in sorted(data["topic_accuracy"].items(), key=lambda item: item[1]))
-            st.caption(topic_text)
+            st.caption(f"Accessible chart description: topic accuracy from lowest to highest. {topic_text}")
 
         st.markdown("#### Flashcard mastery")
         mastery_pct = round(data["mastered"] / data["cards"] * 100) if data["cards"] else 0
