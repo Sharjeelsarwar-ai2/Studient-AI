@@ -15,6 +15,19 @@ Requires: streamlit>=1.45.0, groq, pypdf, python-docx, python-pptx
 import streamlit as st 
 from pypdf import PdfReader 
 from groq import Groq 
+
+# Optional readers for Word and PowerPoint uploads. The app remains import-safe
+# when a deployment has not installed these packages yet.
+try:
+    from docx import Document as DocxDocument
+except ImportError:
+    DocxDocument = None
+
+try:
+    from pptx import Presentation
+except ImportError:
+    Presentation = None
+
 import re 
 import json 
 import os 
@@ -559,6 +572,50 @@ section[data-testid="stSidebar"] {
 .sm-mindmap-children.is-collapsed { display:none; }
 .sm-mindmap-toggle { display:inline-grid; place-items:center; width:21px; height:21px; border-radius:7px; background:rgba(79,70,229,.1); color:var(--accent1); font-size:13px; font-weight:900; }
 .sm-mindmap-root > .sm-mindmap-children { margin-left:36px; }
+
+/* SECOND UI POLISH PASS */
+html, body, [class*="css"] { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.stApp { min-height: 100vh; }
+.main .block-container { max-width: 1500px; padding: 2.25rem 2.25rem 4rem; }
+section[data-testid="stSidebar"] > div { padding: 1.5rem 1.15rem 2rem; }
+section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .7rem; }
+.sm-hero { padding: 54px 34px 48px; margin-bottom: 30px; border-radius: 32px; }
+.sm-hero h1 { font-size: clamp(38px, 4vw, 58px); letter-spacing: -2.4px; }
+.sm-hero p.sub { font-size: 19px; letter-spacing: -.2px; }
+.sm-hero p.desc { font-size: 15.5px; line-height: 1.7; }
+.sm-card { padding: 28px; border-radius: 24px; }
+.sm-feature { min-height: 175px; padding: 25px; border-radius: 22px; }
+.sm-feature .icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 15px; background: rgba(79,70,229,.1); font-size: 25px; }
+.sm-feature .title { margin-top: 14px; font-size: 19px; }
+.sm-metric { padding: 22px 24px; border-radius: 22px; transition: transform .18s ease, box-shadow .18s ease; }
+.sm-metric:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(31,25,90,.16); }
+.sm-metric .value { font-size: clamp(25px, 2.3vw, 35px); letter-spacing: -.8px; }
+.stTabs { margin-top: 8px; }
+.stTabs [data-baseweb="tab-list"] { gap: 6px; padding: 8px; border-radius: 20px; position: sticky; top: .5rem; z-index: 5; }
+.stTabs [data-baseweb="tab"] { min-height: 42px; padding: 10px 16px; font-size: 13px; transition: background .18s ease, color .18s ease, transform .18s ease; }
+.stTabs [data-baseweb="tab"]:hover { color: var(--accent1); background: rgba(79,70,229,.08); }
+.stTabs [aria-selected="true"] { box-shadow: 0 8px 18px rgba(79,70,229,.24) !important; }
+.stTabs [data-baseweb="tab-highlight"] { display: none; }
+.stButton > button, .stDownloadButton > button { min-height: 48px; border-radius: 14px; letter-spacing: .05px; }
+.stButton > button:focus, .stDownloadButton > button:focus { outline: 3px solid rgba(14,165,233,.25); outline-offset: 2px; }
+[data-testid="stFileUploader"] { padding: 10px; border-radius: 20px; box-shadow: 0 8px 24px rgba(31,25,90,.08); }
+[data-testid="stFileUploader"] section { padding: 18px 12px; min-height: 126px; display: flex; align-items: center; justify-content: center; }
+[data-testid="stFileUploader"] button { border-radius: 10px; }
+[data-testid="stMetric"] { border-radius: 17px; }
+.stAlert { border-radius: 15px; }
+.stCaption, [data-testid="stCaptionContainer"] { color: var(--ink-faint); }
+.stTextInput input, .stNumberInput input { min-height: 44px; }
+[data-baseweb="select"] > div { min-height: 44px; border-radius: 12px; }
+[data-testid="stExpander"] { border: 1px solid rgba(124,58,237,.14); border-radius: 16px; background: rgba(255,255,255,.38); overflow: hidden; }
+[data-testid="stExpander"] summary { font-weight: 700; }
+hr { border-color: rgba(79,70,229,.12); }
+.sm-document-bar { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin: 8px 0 17px; padding: 14px 18px; border-radius: 17px; background: rgba(255,255,255,.48); border: 1px solid rgba(255,255,255,.72); }
+.sm-document-name { display:flex; align-items:center; gap:10px; min-width:0; color:var(--ink); font-size:20px; font-weight:850; letter-spacing:-.5px; }
+.sm-document-name span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sm-document-meta { color:var(--ink-faint); font-size:12px; font-weight:750; }
+.sm-footer { opacity:.8; }
+@media (max-width: 900px) { .main .block-container { padding: 1.25rem 1rem 3rem; } .stTabs [data-baseweb="tab-list"] { position: static; } }
+@media (max-width: 640px) { .sm-hero { padding: 40px 18px 34px; border-radius: 24px; } .sm-hero h1 { font-size: 38px; } .sm-hero p.sub { font-size: 16px; } .sm-feature { min-height: 0; } .sm-document-name { font-size: 17px; } }
 </style> 
 """) 
  
@@ -1396,7 +1453,7 @@ if not st.session_state.pdf_text:
 # DOCUMENT HEADER  (Words / Characters / Difficulty — restored) 
 # ============================================================ 
  
-html(f'<div style="display:flex; align-items:center; gap:10px; font-size:26px; font-weight:800; color:var(--ink); margin-bottom:14px;">📄 {st.session_state.document_name} <span style="font-size:11px; padding:5px 9px; border-radius:999px; background:rgba(79,70,229,.09); color:var(--accent1); vertical-align:middle;">{SUPPORTED_LABELS.get(st.session_state.document_type, "DOCUMENT")}</span></div>') 
+html(f'<div class="sm-document-bar"><div class="sm-document-name"><span>📄 {st.session_state.document_name}</span><span style="font-size:11px; padding:5px 9px; border-radius:999px; background:rgba(79,70,229,.09); color:var(--accent1); vertical-align:middle;">{SUPPORTED_LABELS.get(st.session_state.document_type, "DOCUMENT")}</span></div><div class="sm-document-meta">Ready for active learning</div></div>') 
  
 m1, m2, m3 = st.columns(3) 
 with m1: 
