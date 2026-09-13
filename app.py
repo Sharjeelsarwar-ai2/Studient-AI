@@ -71,6 +71,11 @@ try:
 except ImportError:
     pytesseract = None
     convert_from_bytes = None
+
+try:
+    from streamlit_autorefresh import st_autorefresh
+except ImportError:
+    st_autorefresh = None
  
 # ============================================================ 
 # PAGE CONFIG 
@@ -1974,6 +1979,7 @@ STUDY MATERIAL:
             st.session_state.summary_text = result
             st.session_state.summary_audio = None
             save_summary(st.session_state.document_name, result)
+            st.rerun()
             html(f'<div class="sm-answer"><div class="title">📚 AI Study Summary</div></div>') 
             st.markdown(result) 
             st.download_button("⬇️ Download summary as Markdown", result, file_name="studient-summary.md", mime="text/markdown", key="download_summary_markdown")
@@ -2066,6 +2072,7 @@ with tabs[3]:
             st.success(
                 f"Created {len(flashcards)} visual flashcards!"
             )
+            st.rerun()
 
         else:
             st.warning(
@@ -2215,6 +2222,8 @@ with tabs[8]:
         q = questions[idx] 
 
         if st.session_state.timed_mode:
+            if st_autorefresh is not None:
+                st_autorefresh(interval=1000, limit=None, key="practice_timer_heartbeat")
             elapsed = int(time.time() - (st.session_state.test_started_at or time.time()))
             remaining = max(0, st.session_state.test_time_limit * 60 - elapsed)
             st.progress(remaining / (st.session_state.test_time_limit * 60), text=f"Time remaining: {remaining // 60:02d}:{remaining % 60:02d}")
@@ -2275,6 +2284,7 @@ with tabs[8]:
         if st.session_state.get("last_saved_index") != id(answers): 
             save_attempt(st.session_state.document_name, score, total, dict(topic_stats)) 
             st.session_state["last_saved_index"] = id(answers) 
+            st.rerun()
  
         verdict = "Excellent! 🔥" if pct >= 80 else "Good work 👍" if pct >= 60 else "Keep practicing 💪"
         adaptive = "Try a harder difficulty next time." if pct >= 85 else "Review missed concepts before your next test." if pct < 60 else "Stay at this difficulty and build consistency."
