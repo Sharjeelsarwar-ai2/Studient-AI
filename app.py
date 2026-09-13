@@ -581,10 +581,10 @@ section[data-testid="stSidebar"] {
 
 /* SECOND UI POLISH PASS — preserve Streamlit's classic typography */
 .stApp { min-height: 100vh; background-color: #eef0fb; }
-.stApp > header, [data-testid="stHeader"] { background: rgba(244,246,255,.52) !important; backdrop-filter: blur(22px) saturate(165%); -webkit-backdrop-filter: blur(22px) saturate(165%); border-bottom: 1px solid rgba(255,255,255,.62); box-shadow: 0 6px 24px rgba(31,25,90,.07); }
-[data-testid="stToolbar"] { background: rgba(255,255,255,.18); border-radius: 12px; }
-[data-testid="stDecoration"] { background: linear-gradient(90deg, var(--accent1), var(--accent2), var(--accent4), var(--gold)) !important; height: 3px !important; }
-[data-testid="stStatusWidget"] { background: rgba(255,255,255,.5); border: 1px solid rgba(255,255,255,.7); border-radius: 12px; backdrop-filter: blur(14px); }
+.stApp > header, [data-testid="stHeader"] { background: linear-gradient(105deg, rgba(224,231,255,.62), rgba(255,255,255,.42) 42%, rgba(253,242,255,.58) 76%, rgba(254,243,199,.42)) !important; backdrop-filter: blur(30px) saturate(190%); -webkit-backdrop-filter: blur(30px) saturate(190%); border-bottom: 1px solid rgba(255,255,255,.76); box-shadow: 0 8px 30px rgba(31,25,90,.12), inset 0 1px 0 rgba(255,255,255,.82); }
+[data-testid="stToolbar"] { background: linear-gradient(135deg, rgba(255,255,255,.42), rgba(199,210,254,.25)); border: 1px solid rgba(255,255,255,.55); border-radius: 14px; backdrop-filter: blur(16px); }
+[data-testid="stDecoration"] { background: linear-gradient(90deg, var(--accent3), var(--accent1), var(--accent2), var(--accent4), var(--gold)) !important; height: 4px !important; box-shadow: 0 0 18px rgba(124,58,237,.38); }
+[data-testid="stStatusWidget"] { background: linear-gradient(135deg, rgba(255,255,255,.62), rgba(224,231,255,.35)); border: 1px solid rgba(255,255,255,.78); border-radius: 14px; backdrop-filter: blur(18px); }
 .main .block-container { max-width: 1500px; padding: 2.25rem 2.25rem 4rem; }
 section[data-testid="stSidebar"] > div { padding: 1.5rem 1.15rem 2rem; }
 section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .7rem; }
@@ -688,6 +688,29 @@ def generate_speech_audio(text, language="en"):
     except Exception as e:
         st.error(f"Could not create audio: {e}")
         return None
+
+
+def clean_speech_text(text):
+    """Remove markdown, document markers, and formatting artifacts before TTS."""
+    text = re.sub(r"```.*?```", " ", text, flags=re.DOTALL)
+    text = re.sub(r"^\s{0,3}#{1,6}\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*\d+[.)]\s+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\[/?(?:PAGE|SLIDE|TABLE)[^\]]*\]", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"https?://\S+", " ", text)
+    text = re.sub(r"[*_`~]", "", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def prepare_speech_text(text, language_name):
+    """Clean English summaries and translate them for non-English voices."""
+    cleaned = clean_speech_text(text)
+    if language_name == "English":
+        return cleaned
+    prompt = f"Translate the study summary below into natural, clear {language_name} for spoken audio. Preserve all factual meaning. Return only the translated study content without an introduction, headings, markdown, bullets, symbols, or commentary.\n\nSUMMARY:\n{cleaned[:12000]}"
+    translated = ask_groq(prompt, max_tokens=3500)
+    return clean_speech_text(translated) if translated else cleaned
  
  
 # ============================================================
@@ -1545,7 +1568,8 @@ STUDY MATERIAL:
             st.markdown("<br>", unsafe_allow_html=True)
             if st.button("🎧 Generate audio reading", key="generate_summary_audio"):
                 with st.spinner("Preparing your audio summary..."):
-                    st.session_state.summary_audio = generate_speech_audio(st.session_state.summary_text, speech_codes[speech_language])
+                    speech_text = prepare_speech_text(st.session_state.summary_text, speech_language)
+                    st.session_state.summary_audio = generate_speech_audio(speech_text, speech_codes[speech_language])
         if st.session_state.get("summary_audio"):
             st.audio(st.session_state.summary_audio, format="audio/mp3")
             st.download_button("⬇️ Download audio summary", st.session_state.summary_audio, file_name="studient-summary.mp3", mime="audio/mpeg", key="download_summary_audio")
