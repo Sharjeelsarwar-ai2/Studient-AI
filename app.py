@@ -9,7 +9,7 @@ Studient AI
 Flat single-row tab layout (matches the original UI), with the graded 
 interactive Test and Analytics features folded in as regular tabs. 
  
-Requires: streamlit>=1.45.0, groq, pypdf 
+Requires: streamlit>=1.45.0, groq, pypdf, python-docx, python-pptx 
 """ 
  
 import streamlit as st 
@@ -518,6 +518,47 @@ section[data-testid="stSidebar"] {
     height: 340px;
   }
 }
+
+/* BRAND / NAVIGATION POLISH */
+.sm-brand { display:flex; align-items:center; gap:12px; margin:4px 0 22px; }
+.sm-brand-mark { width:44px; height:44px; display:grid; place-items:center; border-radius:14px; color:white; font-size:23px; background:linear-gradient(135deg,#4f46e5,#7c3aed 58%,#db2777); box-shadow:0 10px 24px rgba(79,70,229,.28); }
+.sm-brand-name { font-weight:850; letter-spacing:-.5px; color:var(--ink); font-size:22px; line-height:1; }
+.sm-brand-name span { background:linear-gradient(90deg,var(--accent1),var(--accent4)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+.sm-brand-sub { display:block; margin-top:5px; color:var(--ink-faint); font-size:11px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; }
+.sm-hero .eyebrow { display:inline-flex; align-items:center; gap:7px; padding:7px 13px; border-radius:999px; background:rgba(79,70,229,.09); color:var(--accent1); font-size:12px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; }
+.sm-hero .hero-icon { display:inline-grid; place-items:center; width:70px; height:70px; margin:18px auto 14px; border-radius:22px; font-size:34px; background:linear-gradient(135deg,rgba(79,70,229,.14),rgba(219,39,119,.12)); border:1px solid rgba(124,58,237,.16); }
+.sm-upload-head { margin:2px 0 4px; color:var(--ink); font-size:19px; font-weight:850; }
+.sm-upload-copy { color:var(--ink-faint); font-size:12px; line-height:1.5; margin-bottom:12px; }
+.sm-file-types { display:flex; flex-wrap:wrap; gap:5px; margin:8px 0 12px; }
+.sm-file-type { padding:4px 8px; border-radius:7px; background:rgba(79,70,229,.08); border:1px solid rgba(79,70,229,.12); color:var(--accent1); font-size:10px; font-weight:800; }
+[data-testid="stFileUploader"] section { border-radius:15px; border-color:rgba(124,58,237,.35); background:rgba(255,255,255,.42); }
+[data-testid="stFileUploader"] small { color:var(--ink-faint); }
+.stDownloadButton > button { border-radius:13px; }
+.stTextInput input, .stSelectbox [data-baseweb="select"], .stNumberInput input { border-radius:12px; }
+@media (max-width: 768px) { .sm-brand { margin-bottom:14px; } .sm-hero .hero-icon { width:58px; height:58px; font-size:28px; } }
+
+/* INTERACTIVE MIND MAP */
+.sm-mindmap-shell { margin: 18px 0 6px; padding: 24px; border-radius: 24px; background: linear-gradient(145deg,rgba(255,255,255,.68),rgba(238,242,255,.55)); border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); overflow-x:auto; }
+.sm-mindmap-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+.sm-mindmap-note { color:var(--ink-faint); font-size:12px; font-weight:650; }
+.sm-mindmap-tree, .sm-mindmap-tree ul { list-style:none; margin:0; padding:0; }
+.sm-mindmap-tree ul { position:relative; margin-left:30px; padding-left:26px; border-left:2px solid rgba(124,58,237,.18); }
+.sm-mindmap-tree li { position:relative; margin:13px 0; min-width:210px; }
+.sm-mindmap-tree ul > li::before { content:""; position:absolute; left:-27px; top:25px; width:26px; border-top:2px solid rgba(124,58,237,.18); }
+.sm-mindmap-node { display:inline-flex; align-items:center; gap:9px; max-width:360px; padding:12px 16px; border-radius:15px; background:rgba(255,255,255,.78); border:1px solid rgba(124,58,237,.16); box-shadow:0 6px 18px rgba(31,25,90,.08); color:var(--ink); font-size:14px; font-weight:700; line-height:1.35; cursor:pointer; transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+.sm-mindmap-details summary::-webkit-details-marker { display:none; }
+.sm-mindmap-details[open] > summary .sm-mindmap-toggle { font-size:0; }
+.sm-mindmap-details[open] > summary .sm-mindmap-toggle::after { content:"−"; font-size:13px; }
+.sm-mindmap-details:not([open]) > summary .sm-mindmap-toggle { font-size:0; }
+.sm-mindmap-details:not([open]) > summary .sm-mindmap-toggle::after { content:"+"; font-size:13px; }
+.sm-mindmap-node:hover { transform:translateY(-2px); box-shadow:0 10px 24px rgba(79,70,229,.16); border-color:rgba(79,70,229,.38); }
+.sm-mindmap-root > .sm-mindmap-node { padding:17px 22px; border:0; color:#fff; font-size:18px; background:linear-gradient(135deg,var(--accent1),var(--accent2) 58%,var(--accent4)); box-shadow:0 12px 28px rgba(79,70,229,.28); }
+.sm-mindmap-node .sm-mindmap-dot { flex:0 0 auto; width:9px; height:9px; border-radius:50%; background:linear-gradient(135deg,var(--accent3),var(--accent2)); }
+.sm-mindmap-root > .sm-mindmap-node .sm-mindmap-dot { background:rgba(255,255,255,.82); }
+.sm-mindmap-children { margin-top:10px !important; }
+.sm-mindmap-children.is-collapsed { display:none; }
+.sm-mindmap-toggle { display:inline-grid; place-items:center; width:21px; height:21px; border-radius:7px; background:rgba(79,70,229,.1); color:var(--accent1); font-size:13px; font-weight:900; }
+.sm-mindmap-root > .sm-mindmap-children { margin-left:36px; }
 </style> 
 """) 
  
@@ -562,24 +603,84 @@ def ask_groq(prompt, system_message=None, max_tokens=2000):
     return "" 
  
  
-# ============================================================ 
-# PDF EXTRACTION / CLEANING / CHUNKING 
-# ============================================================ 
- 
-def extract_pdf_text(uploaded_file): 
-    try: 
-        reader = PdfReader(uploaded_file) 
-        pages = [] 
-        for n, page in enumerate(reader.pages, start=1): 
-            text = page.extract_text() 
-            if text: 
-                pages.append(f"\n[PAGE {n}]\n{text}") 
-        return "\n".join(pages) 
-    except Exception as e: 
-        st.error(f"Could not read the PDF: {e}") 
-        return "" 
- 
- 
+# ============================================================
+# DOCUMENT EXTRACTION / CLEANING / CHUNKING
+# ============================================================
+
+SUPPORTED_TYPES = ["pdf", "docx", "pptx"]
+SUPPORTED_LABELS = {"pdf": "PDF", "docx": "Word", "pptx": "PowerPoint"}
+
+
+def extract_pdf_text(uploaded_file):
+    try:
+        uploaded_file.seek(0)
+        reader = PdfReader(uploaded_file)
+        pages = []
+        for n, page in enumerate(reader.pages, start=1):
+            text = page.extract_text()
+            if text:
+                pages.append(f"\n[PAGE {n}]\n{text}")
+        return "".join(pages)
+    except Exception as e:
+        st.error(f"Could not read the PDF: {e}")
+        return ""
+
+
+def extract_docx_text(uploaded_file):
+    if DocxDocument is None:
+        st.error("Word support is not installed. Run: pip install python-docx")
+        return ""
+    try:
+        uploaded_file.seek(0)
+        document = DocxDocument(uploaded_file)
+        parts = []
+        for paragraph in document.paragraphs:
+            if paragraph.text.strip():
+                parts.append(paragraph.text)
+        for table_index, table in enumerate(document.tables, start=1):
+            rows = []
+            for row in table.rows:
+                rows.append(" | ".join(cell.text.strip() for cell in row.cells))
+            if rows:
+                parts.append(f"\n[TABLE {table_index}]\n" + "\n".join(rows))
+        return "\n".join(parts)
+    except Exception as e:
+        st.error(f"Could not read the Word document: {e}")
+        return ""
+
+
+def extract_pptx_text(uploaded_file):
+    if Presentation is None:
+        st.error("PowerPoint support is not installed. Run: pip install python-pptx")
+        return ""
+    try:
+        uploaded_file.seek(0)
+        presentation = Presentation(uploaded_file)
+        slides = []
+        for number, slide in enumerate(presentation.slides, start=1):
+            slide_parts = []
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    slide_parts.append(shape.text.strip())
+                if getattr(shape, "has_table", False):
+                    for row in shape.table.rows:
+                        slide_parts.append(" | ".join(cell.text.strip() for cell in row.cells))
+            if slide_parts:
+                slides.append(f"\n[SLIDE {number}]\n" + "\n".join(slide_parts))
+        return "\n".join(slides)
+    except Exception as e:
+        st.error(f"Could not read the PowerPoint presentation: {e}")
+        return ""
+
+
+def extract_document_text(uploaded_file):
+    extension = uploaded_file.name.rsplit(".", 1)[-1].lower() if "." in uploaded_file.name else ""
+    extractors = {"pdf": extract_pdf_text, "docx": extract_docx_text, "pptx": extract_pptx_text}
+    extractor = extractors.get(extension)
+    if extractor is None:
+        st.error("Unsupported document format. Please upload a PDF, Word document, or PowerPoint presentation.")
+        return "", extension
+    return extractor(uploaded_file), extension
 def clean_text(text): 
     text = text.replace("\x00", " ") 
     text = re.sub(r"[ \t]+", " ", text) 
@@ -1042,6 +1143,104 @@ def render_flashcards(cards):
     html("".join(pieces))
  
  
+
+# ============================================================
+# INTERACTIVE MIND MAP GENERATION
+# ============================================================
+
+MIND_MAP_SYSTEM_MSG = (
+    "You are an educational mind map architect. Respond with ONLY valid JSON — no markdown, "
+    "no code fences, no commentary. Return one object with keys: title (string) and children (array). "
+    "Every node is an object with label (short string) and children (array of nodes). "
+    "Create a useful hierarchy from the supplied study material: 4-7 major branches, each with 2-5 "
+    "supporting concepts, and deeper nodes only when genuinely useful. Keep labels concise. "
+    "Base every node strictly on the material and do not invent facts."
+)
+
+
+def _clean_mind_map_node(node, depth=0):
+    if not isinstance(node, dict):
+        return None
+    label = str(node.get("label", "")).strip()
+    if not label:
+        return None
+    raw_children = node.get("children", [])
+    children = []
+    if depth < 4 and isinstance(raw_children, list):
+        for child in raw_children[:8]:
+            cleaned = _clean_mind_map_node(child, depth + 1)
+            if cleaned:
+                children.append(cleaned)
+    return {"label": label[:120], "children": children}
+
+
+def generate_mind_map(text):
+    context = get_relevant_chunks(
+        text,
+        "main topics concepts definitions processes examples relationships causes effects overview",
+        max_chunks=10,
+        max_context_chars=14000,
+    )
+    prompt = f"""Build a hierarchical interactive mind map for the study material below.
+
+The root title should describe the overall document or subject. Organize the most important ideas into
+clear branches suitable for revision. Prefer meaningful relationships over a long list of isolated facts.
+Return ONLY the JSON object described in the system message.
+
+STUDY MATERIAL:
+{context}
+"""
+    raw = ask_groq(prompt, system_message=MIND_MAP_SYSTEM_MSG, max_tokens=3500)
+    if not raw:
+        return None
+    try:
+        data = json.loads(_strip_json_fences(raw))
+        root_label = str(data.get("title", "Study Material")).strip() if isinstance(data, dict) else "Study Material"
+        raw_children = data.get("children", []) if isinstance(data, dict) else []
+        root = {"label": root_label[:120] or "Study Material", "children": []}
+        if isinstance(raw_children, list):
+            for child in raw_children[:8]:
+                cleaned = _clean_mind_map_node(child, 1)
+                if cleaned:
+                    root["children"].append(cleaned)
+        return root if root["children"] else None
+    except Exception as e:
+        st.error(f"Couldn't parse the generated mind map as JSON: {e}")
+        with st.expander("Raw model output (for debugging)"):
+            st.code(raw)
+        return None
+
+
+def _render_mind_map_nodes(nodes, root=False):
+    esc = _html_escape_lib.escape
+    parts = []
+    for node in nodes:
+        label = esc(str(node.get("label", "")))
+        children = node.get("children") or []
+        node_class = "sm-mindmap-root" if root else ""
+        parts.append(f'<li class="{node_class}">')
+        if children:
+            parts.append('<details open class="sm-mindmap-details">')
+            parts.append(f'<summary class="sm-mindmap-node" title="Click to collapse or expand this branch"><span class="sm-mindmap-toggle">−</span><span class="sm-mindmap-dot"></span><span>{label}</span></summary>')
+            parts.append('<ul class="sm-mindmap-children">')
+            parts.append(_render_mind_map_nodes(children))
+            parts.append('</ul></details>')
+        else:
+            parts.append(f'<div class="sm-mindmap-node" title="Leaf concept"><span class="sm-mindmap-dot"></span><span>{label}</span></div>')
+        parts.append('</li>')
+    return "".join(parts)
+
+
+def render_mind_map(mind_map):
+    esc = _html_escape_lib.escape
+    root = {"label": mind_map.get("label", "Study Material"), "children": mind_map.get("children", [])}
+    parts = ['<div class="sm-mindmap-shell">']
+    parts.append('<div class="sm-mindmap-toolbar"><div><b>Interactive concept map</b><div class="sm-mindmap-note">Follow a branch, then collapse it to focus your revision.</div></div><div class="sm-mindmap-note">Click any branch label to focus • scroll horizontally on smaller screens</div></div>')
+    parts.append('<ul class="sm-mindmap-tree">')
+    parts.append(_render_mind_map_nodes([root], root=True))
+    parts.append('</ul></div>')
+    html("".join(parts))
+
 # ============================================================ 
 # SCORE HISTORY (local JSON — resets on Streamlit Cloud restart) 
 # ============================================================ 
@@ -1077,9 +1276,9 @@ def save_attempt(document_name, score, total, topic_results):
 # ============================================================ 
  
 defaults = { 
-    "pdf_text": "", "document_name": "", 
+    "pdf_text": "", "document_name": "", "document_type": "", "document_signature": "", 
     "quiz_questions": None, "quiz_index": 0, "quiz_answers": [], 
-    "quiz_locked": False, "quiz_finished": False, 
+    "quiz_locked": False, "quiz_finished": False, "mind_map": None, 
 } 
 for k, v in defaults.items(): 
     if k not in st.session_state: 
@@ -1108,12 +1307,12 @@ def metric_card(chip_class, icon, label, value):
 # ============================================================ 
  
 html(""" 
-<div class="sm-hero"> 
-  <div style="font-size:54px;">🧠</div> 
-  <h1><span class="grad">Studient</span><span> AI</h1> 
-  <p class="sub">Your Personal AI-Powered Study Assistant</p> 
-  <p class="desc">Upload your lecture notes or PDF and transform them into clear, 
-  organized, exam-ready study material — then test yourself and track your progress.</p> 
+<div class="sm-hero">
+  <div class="eyebrow">✦ Your intelligent study companion</div>
+  <div class="hero-icon">🧠</div>
+  <h1><span class="grad">Studient</span> AI</h1>
+  <p class="sub">Your Personal AI-Powered Study Assistant</p>
+  <p class="desc">Turn your notes, documents, and presentations into clear, exam-ready learning — then practice, reflect, and improve with confidence.</p>
 </div> 
 """) 
  
@@ -1122,24 +1321,38 @@ html("""
 # ============================================================ 
  
 with st.sidebar: 
-    st.markdown("### 📄 Upload Your Notes") 
-    uploaded_file = st.file_uploader("Choose a PDF", type=["pdf"]) 
- 
-    if uploaded_file: 
-        if st.session_state.document_name != uploaded_file.name: 
-            with st.spinner("Reading your PDF..."): 
-                text = clean_text(extract_pdf_text(uploaded_file)) 
-                st.session_state.pdf_text = text 
-                st.session_state.document_name = uploaded_file.name 
-                reset_quiz() 
-        if st.session_state.pdf_text: 
-            st.success("✓ PDF loaded successfully") 
-            word_count = len(st.session_state.pdf_text.split()) 
-            page_count = st.session_state.pdf_text.count("[PAGE ") 
-            st.metric("📖 Words", f"{word_count:,}") 
-            st.metric("📄 Pages", page_count) 
- 
-    st.divider() 
+    html("""
+    <div class="sm-brand">
+      <div class="sm-brand-mark">🧠</div>
+      <div><div class="sm-brand-name"><span>Studient</span> AI</div><span class="sm-brand-sub">Personal study assistant</span></div>
+    </div>
+    <div class="sm-upload-head">Build your study space</div>
+    <div class="sm-upload-copy">Upload a source and let Studient AI turn it into active revision material.</div>
+    <div class="sm-file-types"><span class="sm-file-type">PDF</span><span class="sm-file-type">WORD</span><span class="sm-file-type">PPTX</span></div>
+    """)
+    uploaded_file = st.file_uploader("Choose study material", type=SUPPORTED_TYPES, label_visibility="collapsed", help="Supported formats: PDF, DOCX, and PPTX")
+
+    if uploaded_file:
+        signature = f"{uploaded_file.name}:{uploaded_file.size}"
+        if st.session_state.document_signature != signature:
+            extension = uploaded_file.name.rsplit(".", 1)[-1].lower() if "." in uploaded_file.name else ""
+            label = SUPPORTED_LABELS.get(extension, extension.upper())
+            with st.spinner(f"Reading your {label}..."):
+                extracted, detected_type = extract_document_text(uploaded_file)
+                st.session_state.pdf_text = clean_text(extracted)
+                st.session_state.document_name = uploaded_file.name
+                st.session_state.document_type = detected_type
+                st.session_state.document_signature = signature
+                reset_quiz()
+        if st.session_state.pdf_text:
+            label = SUPPORTED_LABELS.get(st.session_state.document_type, "document")
+            st.success(f"✓ {label} loaded successfully")
+            word_count = len(st.session_state.pdf_text.split())
+            section_count = sum(st.session_state.pdf_text.count(marker) for marker in ["[PAGE ", "[SLIDE "])
+            st.metric("📖 Words", f"{word_count:,}")
+            st.metric("🧩 Sections", section_count or "—")
+
+    st.divider()
     st.markdown("### ⚙️ Study Settings") 
     question_count = st.slider("Number of questions", 3, 15, 5) 
     difficulty = st.selectbox("Difficulty", ["Easy", "Medium", "Hard", "University Exam"]) 
@@ -1153,7 +1366,7 @@ with st.sidebar:
     html(""" 
     <div class="sm-card"> 
       <b>💡 Study Tip</b><br><br> 
-      For the best results, upload clear lecture notes or textbook PDFs. 
+      For best results, upload clear lecture notes, Word documents, or presentation slides. 
     </div> 
     """) 
  
@@ -1183,7 +1396,7 @@ if not st.session_state.pdf_text:
 # DOCUMENT HEADER  (Words / Characters / Difficulty — restored) 
 # ============================================================ 
  
-html(f'<div style="display:flex; align-items:center; gap:10px; font-size:26px; font-weight:800; color:var(--ink); margin-bottom:14px;">📄 {st.session_state.document_name}</div>') 
+html(f'<div style="display:flex; align-items:center; gap:10px; font-size:26px; font-weight:800; color:var(--ink); margin-bottom:14px;">📄 {st.session_state.document_name} <span style="font-size:11px; padding:5px 9px; border-radius:999px; background:rgba(79,70,229,.09); color:var(--accent1); vertical-align:middle;">{SUPPORTED_LABELS.get(st.session_state.document_type, "DOCUMENT")}</span></div>') 
  
 m1, m2, m3 = st.columns(3) 
 with m1: 
@@ -1202,7 +1415,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 tabs = st.tabs([ 
     "📚 Summary", "📝 Questions", "❓ MCQs", "🎴 Flashcards", 
     "📖 Long Questions", "🎯 Short Questions", "🔍 Key Concepts", 
-    "📊 Difficulty", "🧪 Practice Test", "📈 Analytics", "💬 Ask PDF", 
+    "📊 Difficulty", "🧪 Practice Test", "📈 Analytics", "🧠 Mind Map", "💬 Ask PDF", 
 ]) 
  
 # ---------------- SUMMARY ---------------- 
@@ -1486,8 +1699,28 @@ with tabs[9]:
  
         st.caption("Note: history is stored locally to this app instance and resets if the app restarts or redeploys.") 
  
+
+# ---------------- INTERACTIVE MIND MAP ----------------
+with tabs[10]:
+    st.header("🧠 Interactive Mind Map")
+    st.caption("Turn your uploaded material into a visual, collapsible concept hierarchy.")
+
+    if st.button("✨ Generate Interactive Mind Map", key="gen_mind_map"):
+        with st.spinner("Mapping the key ideas in your document..."):
+            mind_map = generate_mind_map(st.session_state.pdf_text)
+        if mind_map:
+            st.session_state.mind_map = mind_map
+            st.success("Your interactive mind map is ready.")
+        else:
+            st.warning("I couldn't create the mind map. Please try generating it again.")
+
+    if st.session_state.get("mind_map"):
+        render_mind_map(st.session_state.mind_map)
+    else:
+        html('<div class="sm-card"><p>Generate a mind map to explore your document visually. Each branch is grounded in the uploaded material.</p></div>')
+
 # ---------------- ASK PDF ---------------- 
-with tabs[10]: 
+with tabs[11]: 
     st.header("💬 Ask Questions About Your PDF") 
     st.caption("Ask questions and STudient AI will search your uploaded material.") 
  
