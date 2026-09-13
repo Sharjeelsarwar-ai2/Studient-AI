@@ -1,3 +1,5 @@
 streamlit>=1.45.0
 groq
 pypdf
+python-docx
+python-pptx
