@@ -4,3 +4,5 @@ pypdf
 python-docx
 python-pptx
 gTTS
+pytesseract
+pdf2image
