@@ -42,6 +42,13 @@ try:
     from gtts import gTTS
 except ImportError:
     gTTS = None
+
+try:
+    import pytesseract
+    from pdf2image import convert_from_bytes
+except ImportError:
+    pytesseract = None
+    convert_from_bytes = None
  
 # ============================================================ 
 # PAGE CONFIG 
@@ -784,9 +791,25 @@ def extract_pdf_text(uploaded_file):
             text = page.extract_text()
             if text:
                 pages.append(f"\n[PAGE {n}]\n{text}")
-        return "".join(pages)
+        extracted = "".join(pages)
+        if extracted.strip():
+            return extracted
+
+        if pytesseract is None or convert_from_bytes is None:
+            st.warning("This PDF appears to be scanned, but OCR support is not installed. Add pytesseract, pdf2image, and Poppler to enable scanned-document reading.")
+            return ""
+
+        st.info("No selectable text was found. Studient AI is using OCR to read the scanned pages...")
+        uploaded_file.seek(0)
+        images = convert_from_bytes(uploaded_file.getvalue(), dpi=220, fmt="png", thread_count=2)
+        ocr_pages = []
+        for number, image in enumerate(images, start=1):
+            ocr_text = pytesseract.image_to_string(image, config="--psm 6")
+            if ocr_text.strip():
+                ocr_pages.append(f"\n[OCR PAGE {number}]\n{ocr_text}")
+        return "".join(ocr_pages)
     except Exception as e:
-        st.error(f"Could not read the PDF: {e}")
+        st.error(f"Could not read the PDF or run OCR: {e}")
         return ""
 
 
@@ -1684,7 +1707,7 @@ with st.sidebar:
         if st.session_state.pdf_text:
             st.success(f"✓ Workspace ready · {len(st.session_state.workspace_documents)} document(s)")
             word_count = len(st.session_state.pdf_text.split())
-            section_count = sum(st.session_state.pdf_text.count(marker) for marker in ["[PAGE ", "[SLIDE ", "[DOCUMENT: ", "[TABLE "])
+            section_count = sum(st.session_state.pdf_text.count(marker) for marker in ["[PAGE ", "[OCR PAGE ", "[SLIDE ", "[DOCUMENT: ", "[TABLE "])
             st.metric("📖 Words", f"{word_count:,}")
             st.metric("🧩 Sections", section_count or "—")
             with st.expander("📚 Workspace files"):
@@ -1729,7 +1752,7 @@ if not st.session_state.pdf_text:
         with col: 
             html(f'<div class="sm-feature"><div class="icon">{icon}</div><div class="title">{title}</div><div class="text">{text}</div></div>') 
     render_dashboard()
-    html('<div class="sm-warning"><b>📌 Important</b><br><br>Text-based PDFs work best. Image-only scanned PDFs may require OCR.</div>') 
+    html('<div class="sm-warning"><b>📌 OCR supported</b><br><br>Scanned PDFs are automatically processed with OCR when selectable text is not available.</div>') 
     st.stop() 
  
 # ============================================================ 
