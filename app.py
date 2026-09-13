@@ -595,7 +595,7 @@ section[data-testid="stSidebar"] {
 
 /* SECOND UI POLISH PASS — preserve Streamlit's classic typography */
 .stApp { min-height: 100vh; background-color: #eef0fb; }
-.stApp > header, [data-testid="stHeader"] { background: linear-gradient(105deg, rgba(224,231,255,.62), rgba(255,255,255,.42) 42%, rgba(253,242,255,.58) 76%, rgba(254,243,199,.42)) !important; backdrop-filter: blur(30px) saturate(190%); -webkit-backdrop-filter: blur(30px) saturate(190%); border-bottom: 1px solid rgba(255,255,255,.76); box-shadow: 0 8px 30px rgba(31,25,90,.12), inset 0 1px 0 rgba(255,255,255,.82); }
+.stApp > header, [data-testid="stHeader"] { background: linear-gradient(105deg, rgba(224,231,255,.34), rgba(255,255,255,.18) 42%, rgba(253,242,255,.30) 76%, rgba(254,243,199,.20)) !important; backdrop-filter: blur(38px) saturate(200%); -webkit-backdrop-filter: blur(38px) saturate(200%); border-bottom: 1px solid rgba(255,255,255,.48); box-shadow: 0 8px 30px rgba(31,25,90,.09), inset 0 1px 0 rgba(255,255,255,.62); }
 [data-testid="stToolbar"] { background: linear-gradient(135deg, rgba(255,255,255,.42), rgba(199,210,254,.25)); border: 1px solid rgba(255,255,255,.55); border-radius: 14px; backdrop-filter: blur(16px); }
 [data-testid="stDecoration"] { background: linear-gradient(90deg, var(--accent3), var(--accent1), var(--accent2), var(--accent4), var(--gold)) !important; height: 4px !important; box-shadow: 0 0 18px rgba(124,58,237,.38); }
 [data-testid="stStatusWidget"] { background: linear-gradient(135deg, rgba(255,255,255,.62), rgba(224,231,255,.35)); border: 1px solid rgba(255,255,255,.78); border-radius: 14px; backdrop-filter: blur(18px); }
@@ -640,6 +640,16 @@ hr { border-color: rgba(79,70,229,.12); }
 .sm-document-name { display:flex; align-items:center; gap:10px; min-width:0; color:var(--ink); font-size:20px; font-weight:850; letter-spacing:-.5px; }
 .sm-document-name span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .sm-document-meta { color:var(--ink-faint); font-size:12px; font-weight:750; }
+.sm-progress-dashboard { display:flex; align-items:center; justify-content:space-between; gap:26px; flex-wrap:wrap; padding:22px 26px; margin-top:16px; border-radius:26px; background:linear-gradient(115deg,rgba(255,255,255,.66),rgba(224,231,255,.48) 48%,rgba(253,242,255,.58)); border:1px solid rgba(255,255,255,.74); box-shadow:0 16px 42px rgba(31,25,90,.14), inset 0 1px 0 rgba(255,255,255,.86); }
+.sm-progress-copy { flex:1; min-width:220px; }
+.sm-progress-kicker { color:var(--accent1); font-size:11px; font-weight:800; letter-spacing:.7px; text-transform:uppercase; }
+.sm-progress-title { color:var(--ink); font-size:22px; font-weight:850; margin-top:4px; }
+.sm-progress-sub { color:var(--ink-faint); font-size:12px; margin-top:4px; }
+.sm-progress-orb { --progress:0; position:relative; width:128px; height:128px; display:grid; place-items:center; border-radius:50%; background:conic-gradient(var(--accent1) 0 calc(var(--progress) * .7%), var(--accent2) calc(var(--progress) * .7%) calc(var(--progress) * 1%), rgba(148,163,184,.18) calc(var(--progress) * 1%) 100%); box-shadow:0 12px 28px rgba(79,70,229,.22); }
+.sm-progress-orb::before { content:""; position:absolute; inset:10px; border-radius:50%; background:linear-gradient(145deg,rgba(255,255,255,.88),rgba(239,242,255,.72)); box-shadow:inset 0 2px 8px rgba(31,25,90,.08); }
+.sm-progress-orb-content { position:relative; text-align:center; color:var(--ink); }
+.sm-progress-number { display:block; font-size:27px; font-weight:850; letter-spacing:-1px; }
+.sm-progress-label { display:block; color:var(--ink-faint); font-size:10px; font-weight:750; }
 .sm-footer { opacity:.8; }
 .sm-audio-panel { margin-top:20px; padding:20px; border-radius:20px; background:linear-gradient(135deg,rgba(224,231,255,.72),rgba(253,242,255,.72)); border:1px solid rgba(124,58,237,.16); box-shadow:0 12px 28px rgba(31,25,90,.1), inset 0 1px 0 rgba(255,255,255,.8); }
 .sm-audio-title { color:var(--ink); font-size:16px; font-weight:750; margin-bottom:5px; }
@@ -1583,7 +1593,7 @@ with m3:
 doc_attempts = [h for h in load_history() if h.get("document") == st.session_state.document_name]
 best_score = max((round((h["score"] / h["total"]) * 100) for h in doc_attempts if h.get("total")), default=0)
 readiness = min(100, round(best_score * 0.7 + (20 if st.session_state.get("summary_text") else 0) + (10 if st.session_state.get("flashcards") else 0)))
-html(f'<div class="sm-card" style="display:flex; justify-content:space-between; gap:18px; flex-wrap:wrap; align-items:center; margin-top:16px; padding:18px 22px;"><div><b>📈 Study progress</b><div style="color:var(--ink-faint); font-size:12px; margin-top:4px;">{len(doc_attempts)} practice attempt(s) · {len(st.session_state.get("flashcards") or [])} flashcards ready</div></div><div style="color:var(--accent1); font-size:18px; font-weight:800;">Exam readiness: {readiness}%</div></div>')
+html(f'<div class="sm-progress-dashboard"><div class="sm-progress-copy"><div class="sm-progress-kicker">Your learning dashboard</div><div class="sm-progress-title">Keep building momentum</div><div class="sm-progress-sub">{len(doc_attempts)} practice attempt(s) · {len(st.session_state.get("flashcards") or [])} flashcards ready · Best score: {best_score}%</div></div><div class="sm-progress-orb" style="--progress:{readiness};"><div class="sm-progress-orb-content"><span class="sm-progress-number">{readiness}%</span><span class="sm-progress-label">readiness</span></div></div></div>')
  
 st.markdown("<br>", unsafe_allow_html=True) 
  
