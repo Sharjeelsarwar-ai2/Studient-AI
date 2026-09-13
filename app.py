@@ -573,8 +573,7 @@ section[data-testid="stSidebar"] {
 .sm-mindmap-toggle { display:inline-grid; place-items:center; width:21px; height:21px; border-radius:7px; background:rgba(79,70,229,.1); color:var(--accent1); font-size:13px; font-weight:900; }
 .sm-mindmap-root > .sm-mindmap-children { margin-left:36px; }
 
-/* SECOND UI POLISH PASS */
-html, body, [class*="css"] { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+/* SECOND UI POLISH PASS — preserve Streamlit's classic typography */
 .stApp { min-height: 100vh; }
 .main .block-container { max-width: 1500px; padding: 2.25rem 2.25rem 4rem; }
 section[data-testid="stSidebar"] > div { padding: 1.5rem 1.15rem 2rem; }
@@ -587,6 +586,10 @@ section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .7rem; }
 .sm-feature { min-height: 175px; padding: 25px; border-radius: 22px; }
 .sm-feature .icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 15px; background: rgba(79,70,229,.1); font-size: 25px; }
 .sm-feature .title { margin-top: 14px; font-size: 19px; }
+.sm-hero, .sm-card, .sm-feature, .sm-metric, .sm-document-bar { animation: smFadeUp .48s ease both; }
+@keyframes smFadeUp { from { opacity:0; transform:translateY(7px); } to { opacity:1; transform:translateY(0); } }
+.sm-hero::after { content:""; position:absolute; width:180px; height:180px; right:-55px; top:-75px; border-radius:50%; background:rgba(255,255,255,.22); filter:blur(2px); animation:smGlow 7s ease-in-out infinite alternate; pointer-events:none; }
+@keyframes smGlow { from { transform:translate3d(-8px,8px,0); opacity:.35; } to { transform:translate3d(12px,-5px,0); opacity:.7; } }
 .sm-metric { padding: 22px 24px; border-radius: 22px; transition: transform .18s ease, box-shadow .18s ease; }
 .sm-metric:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(31,25,90,.16); }
 .sm-metric .value { font-size: clamp(25px, 2.3vw, 35px); letter-spacing: -.8px; }
@@ -1405,7 +1408,14 @@ with st.sidebar:
             label = SUPPORTED_LABELS.get(st.session_state.document_type, "document")
             st.success(f"✓ {label} loaded successfully")
             word_count = len(st.session_state.pdf_text.split())
-            section_count = sum(st.session_state.pdf_text.count(marker) for marker in ["[PAGE ", "[SLIDE "])
+            if st.session_state.document_type == "pdf":
+                section_count = st.session_state.pdf_text.count("[PAGE ")
+            elif st.session_state.document_type == "pptx":
+                section_count = st.session_state.pdf_text.count("[SLIDE ")
+            else:
+                # Word files do not have pages in the extracted text. Count
+                # non-empty paragraphs/tables as study sections instead.
+                section_count = len([line for line in st.session_state.pdf_text.splitlines() if line.strip()])
             st.metric("📖 Words", f"{word_count:,}")
             st.metric("🧩 Sections", section_count or "—")
 
