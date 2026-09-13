@@ -6,3 +6,5 @@ python-pptx
 gTTS
 pytesseract
 pdf2image
+reportlab
+Pillow
