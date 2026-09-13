@@ -270,7 +270,14 @@ section[data-testid="stSidebar"] {
   position: relative;
   height: 330px;
   perspective: 1400px;
+  animation: smCardRise .5s ease both;
 }
+
+.sm-flip-card:nth-child(2) { animation-delay: .06s; }
+.sm-flip-card:nth-child(3) { animation-delay: .12s; }
+.sm-flip-card:nth-child(4) { animation-delay: .18s; }
+.sm-flip-card:nth-child(5) { animation-delay: .24s; }
+@keyframes smCardRise { from { opacity:0; transform:translateY(10px) scale(.985); } to { opacity:1; transform:translateY(0) scale(1); } }
 
 .sm-flip-card input[type="checkbox"] {
   display: none;
@@ -309,18 +316,24 @@ section[data-testid="stSidebar"] {
 
 .sm-flip-front {
   background:
-    radial-gradient(circle at 90% 10%, rgba(124,58,237,0.20), transparent 30%),
-    linear-gradient(150deg, rgba(199,210,254,0.65), rgba(255,255,255,0.55));
+    radial-gradient(circle at 92% 8%, rgba(219,39,119,0.27), transparent 29%),
+    radial-gradient(circle at 4% 96%, rgba(14,165,233,0.20), transparent 32%),
+    linear-gradient(145deg, rgba(224,231,255,0.86), rgba(255,255,255,0.58) 56%, rgba(253,242,255,0.74));
   justify-content: space-between;
 }
 
 .sm-flip-back {
   background:
-    radial-gradient(circle at 10% 10%, rgba(14,165,233,0.18), transparent 30%),
-    linear-gradient(150deg, rgba(220,252,231,0.65), rgba(255,255,255,0.55));
+    radial-gradient(circle at 8% 8%, rgba(14,165,233,0.28), transparent 30%),
+    radial-gradient(circle at 94% 94%, rgba(22,163,74,0.18), transparent 30%),
+    linear-gradient(145deg, rgba(220,252,231,0.82), rgba(255,255,255,0.62) 54%, rgba(224,231,255,0.72));
   transform: rotateY(180deg);
   justify-content: space-between;
 }
+
+.sm-flip-front::before, .sm-flip-back::before { content:""; position:absolute; left:0; right:0; top:0; height:5px; background:linear-gradient(90deg,var(--accent3),var(--accent1),var(--accent4),var(--gold)); opacity:.9; }
+.sm-flip-card:hover .sm-flip-front, .sm-flip-card:hover .sm-flip-back { box-shadow:0 20px 46px rgba(31,25,90,.2), inset 0 1px 0 rgba(255,255,255,.85); }
+.sm-flip-card:focus-within { outline:3px solid rgba(14,165,233,.22); outline-offset:5px; border-radius:24px; }
 
 .sm-flip-q {
   font-size: 20px;
