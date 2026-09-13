@@ -708,8 +708,22 @@ hr { border-color: rgba(79,70,229,.12); }
 .sm-dashboard-summary span { display:block; color:var(--ink-faint); overflow-wrap:anywhere; word-break:break-word; white-space:normal; line-height:1.45; max-height:3.1em; overflow:hidden; }
 .sm-dashboard-row span:first-child { min-width:0; overflow-wrap:anywhere; word-break:break-word; }
 .sm-dashboard-empty { padding:12px; border-radius:12px; background:rgba(255,255,255,.32); color:var(--ink-faint); font-size:12px; }
+.sm-dashboard-insights { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:14px; padding:12px 14px; border-radius:16px; background:rgba(31,41,75,.045); border:1px solid rgba(124,58,237,.10); }
+.sm-dashboard-insights span { padding:5px 10px; color:var(--ink-faint); font-size:11px; border-right:1px solid rgba(124,58,237,.12); }
+.sm-dashboard-insights span:last-child { border-right:0; }
+.sm-dashboard-insights b { color:var(--ink); margin-left:4px; }
+.sm-dashboard-insights b.positive { color:#059669; }
+.sm-dashboard-insights b.negative { color:#dc2626; }
+.sm-dashboard-columns > div { min-width:0; }
+.stApp .main .block-container { width:100%; max-width:1440px; }
+.stTabs [data-baseweb="tab-list"] { overflow-x:auto; scrollbar-width:thin; }
+.stTabs [data-baseweb="tab"] { white-space:nowrap; }
+.stButton > button, .stDownloadButton > button { box-shadow:0 5px 14px rgba(31,25,90,.07); transition:transform .16s ease, box-shadow .16s ease; }
+.stButton > button:hover, .stDownloadButton > button:hover { transform:translateY(-1px); box-shadow:0 8px 18px rgba(79,70,229,.16); }
+.stMarkdown, [data-testid="stMarkdownContainer"] { overflow-wrap:anywhere; }
+.stDataFrame, [data-testid="stMetric"] { border:1px solid rgba(124,58,237,.10); box-shadow:0 8px 22px rgba(31,25,90,.06); }
 @media (max-width: 1050px) { .sm-dashboard-grid { grid-template-columns:repeat(2,1fr); } .sm-dashboard-gauge { grid-column:span 2; } }
-@media (max-width: 640px) { .sm-dashboard { padding:20px; } .sm-dashboard-grid, .sm-dashboard-columns { grid-template-columns:1fr; } .sm-dashboard-gauge { grid-column:auto; } }
+@media (max-width: 640px) { .sm-dashboard { padding:20px 16px; } .sm-dashboard-grid, .sm-dashboard-columns { grid-template-columns:1fr; } .sm-dashboard-gauge { grid-column:auto; } .sm-dashboard-insights { display:grid; grid-template-columns:1fr 1fr; } .sm-dashboard-insights span { border-right:0; border-bottom:1px solid rgba(124,58,237,.10); } .sm-dashboard-insights span:last-child { grid-column:span 2; } }
 .sm-footer { opacity:.8; }
 .sm-audio-panel { margin-top:20px; padding:20px; border-radius:20px; background:linear-gradient(135deg,rgba(224,231,255,.72),rgba(253,242,255,.72)); border:1px solid rgba(124,58,237,.16); box-shadow:0 12px 28px rgba(31,25,90,.1), inset 0 1px 0 rgba(255,255,255,.8); }
 .sm-audio-title { color:var(--ink); font-size:16px; font-weight:750; margin-bottom:5px; }
@@ -1707,10 +1721,12 @@ def dashboard_snapshot():
                 streak += 1
             else:
                 break
-    recommended = "Take a practice test" if total_questions == 0 else "Review cards marked Needs practice" if mastered < current_cards else "Generate a fresh summary"
+    analytics = analytics_snapshot(st.session_state.get("document_name", "")) if st.session_state.get("document_name") else {"average": 0, "improvement": 0, "sessions": 0, "weakest": "Complete a practice test", "questions": 0}
+    due_today = len(due_review_cards(current_flashcards)) if current_flashcards else 0
+    recommended = f"Review {due_today} flashcards due today" if due_today else "Take a practice test" if total_questions == 0 else f"Review {analytics['weakest']} concepts"
     recent_docs = sorted(documents.items(), key=lambda item: item[1], reverse=True)[:5]
     recent_summaries = list(reversed(summaries[-4:]))
-    return {"total_questions": total_questions, "best_score": best_score, "mastered": mastered, "current_cards": current_cards, "readiness": readiness, "streak": streak, "recommended": recommended, "recent_docs": recent_docs, "recent_summaries": recent_summaries}
+    return {"total_questions": total_questions, "best_score": best_score, "mastered": mastered, "current_cards": current_cards, "readiness": readiness, "streak": streak, "recommended": recommended, "recent_docs": recent_docs, "recent_summaries": recent_summaries, "average": analytics["average"], "improvement": analytics["improvement"], "sessions": analytics["sessions"], "weakest": analytics["weakest"], "due_today": due_today}
 
 
 def render_dashboard():
@@ -1726,6 +1742,7 @@ def render_dashboard():
         <div class="sm-dashboard-stat"><span>🎴</span><b>{data["mastered"]}/{data["current_cards"]}</b><small>flashcards mastered</small></div>
         <div class="sm-dashboard-stat"><span>🏆</span><b>{data["best_score"]}%</b><small>best test score</small></div>
       </div>
+      <div class="sm-dashboard-insights"><span>Average score <b>{data["average"]}%</b></span><span>Trend <b class="{'positive' if data['improvement'] >= 0 else 'negative'}">{data["improvement"]:+d}%</b></span><span>Study sessions <b>{data["sessions"]}</b></span><span>Due today <b>{data["due_today"]}</b></span><span>Focus next <b>{_html_escape_lib.escape(data["weakest"])}</b></span></div>
       <div class="sm-dashboard-columns"><div><div class="sm-dashboard-section-title">Recent documents</div>{doc_rows}</div><div><div class="sm-dashboard-section-title">Recently generated summaries</div>{summary_rows}</div></div>
     </section>''')
  
