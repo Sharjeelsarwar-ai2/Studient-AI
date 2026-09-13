@@ -32,7 +32,8 @@ import re
 import json 
 import os 
 import html as _html_escape_lib  # aliased: this file defines its own html() render helper below 
-from io import BytesIO
+from io import BytesIO, StringIO
+import csv
 from datetime import datetime 
 from collections import Counter, defaultdict 
 
@@ -730,8 +731,8 @@ def prepare_speech_text(text, language_name):
 # DOCUMENT EXTRACTION / CLEANING / CHUNKING
 # ============================================================
 
-SUPPORTED_TYPES = ["pdf", "docx", "pptx"]
-SUPPORTED_LABELS = {"pdf": "PDF", "docx": "Word", "pptx": "PowerPoint"}
+SUPPORTED_TYPES = ["pdf", "docx", "pptx", "txt", "md"]
+SUPPORTED_LABELS = {"pdf": "PDF", "docx": "Word", "pptx": "PowerPoint", "txt": "Text", "md": "Markdown"}
 
 
 def extract_pdf_text(uploaded_file):
@@ -796,9 +797,18 @@ def extract_pptx_text(uploaded_file):
         return ""
 
 
+def extract_plain_text(uploaded_file):
+    try:
+        uploaded_file.seek(0)
+        return uploaded_file.read().decode("utf-8", errors="replace")
+    except Exception as e:
+        st.error(f"Could not read the text file: {e}")
+        return ""
+
+
 def extract_document_text(uploaded_file):
     extension = uploaded_file.name.rsplit(".", 1)[-1].lower() if "." in uploaded_file.name else ""
-    extractors = {"pdf": extract_pdf_text, "docx": extract_docx_text, "pptx": extract_pptx_text}
+    extractors = {"pdf": extract_pdf_text, "docx": extract_docx_text, "pptx": extract_pptx_text, "txt": extract_plain_text, "md": extract_plain_text}
     extractor = extractors.get(extension)
     if extractor is None:
         st.error("Unsupported document format. Please upload a PDF, Word document, or PowerPoint presentation.")
@@ -1403,10 +1413,25 @@ defaults = {
     "quiz_questions": None, "quiz_index": 0, "quiz_answers": [], 
     "quiz_locked": False, "quiz_finished": False, "mind_map": None,
     "summary_text": "", "summary_audio": None,
+    "theme_mode": "Light", "reduced_motion": False,
+    "flashcards": None, "flashcard_status": {},
 } 
 for k, v in defaults.items(): 
     if k not in st.session_state: 
         st.session_state[k] = v 
+
+if st.session_state.theme_mode == "Dark":
+    html("""
+    <style>
+    :root { --ink:#eef2ff; --ink-soft:#c7d2fe; --ink-faint:#94a3b8; --glass-bg:rgba(30,41,75,.66); --glass-bg-soft:rgba(30,41,75,.52); --glass-border:rgba(148,163,184,.24); }
+    .stApp { background:radial-gradient(circle at 8% 0%,rgba(79,70,229,.28),transparent 32%),radial-gradient(circle at 92% 4%,rgba(219,39,119,.20),transparent 30%),linear-gradient(160deg,#10152d,#17162f 55%,#21152f) !important; }
+    section[data-testid="stSidebar"] { background:linear-gradient(180deg,rgba(15,23,42,.92),rgba(30,27,55,.9)) !important; }
+    .sm-hero,.sm-card,.sm-feature,.sm-metric,.sm-document-bar { background:linear-gradient(145deg,rgba(30,41,75,.78),rgba(49,46,129,.42)) !important; border-color:rgba(148,163,184,.24) !important; }
+    .stTabs [data-baseweb="tab-list"] { background:rgba(30,41,75,.68) !important; }
+    </style>
+    """)
+if st.session_state.reduced_motion:
+    html("<style>* { animation-duration:0.001ms !important; transition-duration:0.001ms !important; }</style>")
  
  
 def reset_quiz(): 
@@ -1444,7 +1469,7 @@ html("""
 # SIDEBAR 
 # ============================================================ 
  
-with st.sidebar: 
+with st.sidebar:
     html("""
     <div class="sm-brand">
       <div class="sm-brand-mark">🧠</div>
@@ -1452,11 +1477,20 @@ with st.sidebar:
     </div>
     <div class="sm-upload-head">Build your study space</div>
     <div class="sm-upload-copy">Upload a source and let Studient AI turn it into active revision material.</div>
-    <div class="sm-file-types"><span class="sm-file-type">PDF</span><span class="sm-file-type">WORD</span><span class="sm-file-type">PPTX</span></div>
+    <div class="sm-file-types"><span class="sm-file-type">PDF</span><span class="sm-file-type">WORD</span><span class="sm-file-type">PPTX</span><span class="sm-file-type">TXT</span><span class="sm-file-type">MD</span></div>
     """)
-    uploaded_file = st.file_uploader("Choose study material", type=SUPPORTED_TYPES, label_visibility="collapsed", help="Supported formats: PDF, DOCX, and PPTX")
+    selected_theme = st.selectbox("Appearance", ["Light", "Dark"], index=0 if st.session_state.theme_mode == "Light" else 1)
+    reduced_motion = st.checkbox("Reduce animations", value=st.session_state.reduced_motion)
+    if selected_theme != st.session_state.theme_mode or reduced_motion != st.session_state.reduced_motion:
+        st.session_state.theme_mode = selected_theme
+        st.session_state.reduced_motion = reduced_motion
+        st.rerun()
+    uploaded_file = st.file_uploader("Choose study material", type=SUPPORTED_TYPES, label_visibility="collapsed", help="Supported formats: PDF, DOCX, PPTX, TXT, and Markdown")
 
     if uploaded_file:
+        if uploaded_file.size > 25 * 1024 * 1024:
+            st.error("This file is larger than 25 MB. Please upload a smaller study document.")
+            st.stop()
         signature = f"{uploaded_file.name}:{uploaded_file.size}"
         if st.session_state.document_signature != signature:
             extension = uploaded_file.name.rsplit(".", 1)[-1].lower() if "." in uploaded_file.name else ""
@@ -1469,6 +1503,8 @@ with st.sidebar:
                 st.session_state.document_signature = signature
                 st.session_state.summary_text = ""
                 st.session_state.summary_audio = None
+                st.session_state.flashcards = None
+                st.session_state.flashcard_status = {}
                 reset_quiz()
         if st.session_state.pdf_text:
             label = SUPPORTED_LABELS.get(st.session_state.document_type, "document")
@@ -1530,6 +1566,11 @@ if not st.session_state.pdf_text:
 # ============================================================ 
  
 html(f'<div class="sm-document-bar"><div class="sm-document-name"><span>📄 {st.session_state.document_name}</span><span style="font-size:11px; padding:5px 9px; border-radius:999px; background:rgba(79,70,229,.09); color:var(--accent1); vertical-align:middle;">{SUPPORTED_LABELS.get(st.session_state.document_type, "DOCUMENT")}</span></div><div class="sm-document-meta">Ready for active learning</div></div>') 
+
+with st.expander("📄 Preview extracted document text"):
+    preview_text = st.session_state.pdf_text[:5000]
+    st.text_area("Extracted content preview", preview_text, height=220, label_visibility="collapsed")
+    st.download_button("⬇️ Download extracted text", st.session_state.pdf_text, file_name=f"{st.session_state.document_name.rsplit('.', 1)[0]}.txt", mime="text/plain", key="download_extracted_text")
  
 m1, m2, m3 = st.columns(3) 
 with m1: 
@@ -1538,6 +1579,11 @@ with m2:
     metric_card("chip-cyan", "🔤", "Characters", f"{len(st.session_state.pdf_text):,}") 
 with m3: 
     metric_card("chip-orange", "🎯", "Difficulty", difficulty) 
+
+doc_attempts = [h for h in load_history() if h.get("document") == st.session_state.document_name]
+best_score = max((round((h["score"] / h["total"]) * 100) for h in doc_attempts if h.get("total")), default=0)
+readiness = min(100, round(best_score * 0.7 + (20 if st.session_state.get("summary_text") else 0) + (10 if st.session_state.get("flashcards") else 0)))
+html(f'<div class="sm-card" style="display:flex; justify-content:space-between; gap:18px; flex-wrap:wrap; align-items:center; margin-top:16px; padding:18px 22px;"><div><b>📈 Study progress</b><div style="color:var(--ink-faint); font-size:12px; margin-top:4px;">{len(doc_attempts)} practice attempt(s) · {len(st.session_state.get("flashcards") or [])} flashcards ready</div></div><div style="color:var(--accent1); font-size:18px; font-weight:800;">Exam readiness: {readiness}%</div></div>')
  
 st.markdown("<br>", unsafe_allow_html=True) 
  
@@ -1570,6 +1616,7 @@ STUDY MATERIAL:
             st.session_state.summary_audio = None
             html(f'<div class="sm-answer"><div class="title">📚 AI Study Summary</div></div>') 
             st.markdown(result) 
+            st.download_button("⬇️ Download summary as Markdown", result, file_name="studient-summary.md", mime="text/markdown", key="download_summary_markdown")
 
     if st.session_state.get("summary_text"):
         html('<div class="sm-audio-panel"><div class="sm-audio-title">🔊 Listen to your study summary</div><div class="sm-audio-copy">Choose a language and let Studient AI read the summary aloud while you revise.</div></div>')
@@ -1641,17 +1688,33 @@ with tabs[3]:
             )
 
         if flashcards:
+            st.session_state.flashcards = flashcards
+            st.session_state.flashcard_status = {str(i): "New" for i in range(len(flashcards))}
             st.success(
                 f"Created {len(flashcards)} visual flashcards!"
             )
-
-            render_flashcards(flashcards)
 
         else:
             st.warning(
                 "I couldn't create the flashcards. "
                 "Please try generating them again."
             ) 
+
+    if st.session_state.get("flashcards"):
+        flashcards = st.session_state.flashcards
+        render_flashcards(flashcards)
+        st.markdown("#### Review progress")
+        st.caption("Mark cards as mastered or needing practice to build a simple spaced-review queue.")
+        review_labels = [f"Card {i + 1}: {card['front']}" for i, card in enumerate(flashcards)]
+        current_review = [review_labels[i] for i, card in enumerate(flashcards) if st.session_state.flashcard_status.get(str(i)) == "Needs practice"]
+        needs_practice = st.multiselect("Cards to revisit", review_labels, default=current_review, key="flashcard_review_queue")
+        st.session_state.flashcard_status = {str(i): ("Needs practice" if review_labels[i] in needs_practice else "Mastered") for i in range(len(flashcards))}
+        csv_buffer = StringIO()
+        writer = csv.writer(csv_buffer)
+        writer.writerow(["Front", "Topic", "Visual type", "Visual title", "Visual items", "Review status"])
+        for i, card in enumerate(flashcards):
+            writer.writerow([card["front"], card["topic"], card["visual_type"], card["visual_title"], " | ".join(card["visual_items"]), st.session_state.flashcard_status.get(str(i), "New")])
+        st.download_button("⬇️ Export flashcards as CSV", csv_buffer.getvalue(), file_name="studient-flashcards.csv", mime="text/csv", key="export_flashcards_csv")
  
 # ---------------- LONG QUESTIONS ---------------- 
 with tabs[4]: 
@@ -1867,6 +1930,7 @@ with tabs[10]:
 
     if st.session_state.get("mind_map"):
         render_mind_map(st.session_state.mind_map)
+        st.download_button("⬇️ Export mind map as JSON", json.dumps(st.session_state.mind_map, indent=2, ensure_ascii=False), file_name="studient-mind-map.json", mime="application/json", key="export_mind_map_json")
     else:
         html('<div class="sm-card"><p>Generate a mind map to explore your document visually. Each branch is grounded in the uploaded material.</p></div>')
 
