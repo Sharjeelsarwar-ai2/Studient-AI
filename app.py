@@ -1985,6 +1985,9 @@ STUDY MATERIAL:
             st.download_button("⬇️ Download summary as Markdown", result, file_name="studient-summary.md", mime="text/markdown", key="download_summary_markdown")
 
     if st.session_state.get("summary_text"):
+        html('<div class="sm-answer"><div class="title">📚 AI Study Summary</div></div>')
+        st.markdown(st.session_state.summary_text)
+        st.download_button("⬇️ Download summary as Markdown", st.session_state.summary_text, file_name="studient-summary.md", mime="text/markdown", key="download_summary_markdown_saved")
         summary_pdf = make_pdf_bytes("Studient AI Study Summary", [(st.session_state.document_name, st.session_state.summary_text)])
         if summary_pdf:
             st.download_button("⬇️ Download summary as PDF", summary_pdf, file_name="studient-summary.pdf", mime="application/pdf", key="download_summary_pdf")
