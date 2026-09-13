@@ -31,10 +31,11 @@ except ImportError:
 import re 
 import json 
 import os 
+import hashlib
 import html as _html_escape_lib  # aliased: this file defines its own html() render helper below 
 from io import BytesIO, StringIO
 import csv
-from datetime import datetime 
+from datetime import datetime, date, timedelta
 from collections import Counter, defaultdict 
 
 try:
@@ -771,7 +772,7 @@ def prepare_speech_text(text, language_name):
 # ============================================================
 
 SUPPORTED_TYPES = ["pdf", "docx", "pptx", "txt", "md"]
-SUPPORTED_LABELS = {"pdf": "PDF", "docx": "Word", "pptx": "PowerPoint", "txt": "Text", "md": "Markdown"}
+SUPPORTED_LABELS = {"pdf": "PDF", "docx": "Word", "pptx": "PowerPoint", "txt": "Text", "md": "Markdown", "workspace": "Workspace"}
 
 
 def extract_pdf_text(uploaded_file):
@@ -1419,6 +1420,7 @@ def render_mind_map(mind_map):
  
 HISTORY_FILE = "study_history.json" 
 SUMMARY_HISTORY_FILE = "summary_history.json"
+REVIEW_STATE_FILE = "flashcard_review_state.json"
  
 def load_history(): 
     if os.path.exists(HISTORY_FILE): 
@@ -1468,6 +1470,58 @@ def save_summary(document_name, summary):
         st.warning(f"Couldn't save summary activity: {e}")
 
 
+def load_review_state():
+    if os.path.exists(REVIEW_STATE_FILE):
+        try:
+            with open(REVIEW_STATE_FILE, "r") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def save_review_state(state):
+    try:
+        with open(REVIEW_STATE_FILE, "w") as f:
+            json.dump(state, f, indent=2)
+    except Exception as e:
+        st.warning(f"Couldn't save flashcard review progress: {e}")
+
+
+def review_key(card):
+    raw = f"{card.get('front', '')}|{card.get('topic', '')}|{st.session_state.get('document_name', '')}"
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def get_review_card(card):
+    state = st.session_state.review_state.setdefault(review_key(card), {"box": 1, "due": str(date.today()), "history": [], "last_rating": "New"})
+    return state
+
+
+def rate_review_card(card, rating):
+    state = get_review_card(card)
+    intervals = {"Again": [0, 0, 1, 1, 1], "Hard": [1, 1, 2, 3, 4], "Good": [1, 2, 4, 7, 14], "Easy": [2, 4, 7, 14, 30]}
+    if rating == "Again":
+        state["box"] = 1
+    elif rating == "Hard":
+        state["box"] = max(1, state.get("box", 1))
+    elif rating == "Good":
+        state["box"] = min(5, state.get("box", 1) + 1)
+    elif rating == "Easy":
+        state["box"] = min(5, state.get("box", 1) + 2)
+    days = intervals[rating][min(state["box"] - 1, 4)]
+    state["due"] = str(date.today() + timedelta(days=days))
+    state["last_rating"] = rating
+    state.setdefault("history", []).append({"date": str(date.today()), "rating": rating, "box": state["box"]})
+    state["history"] = state["history"][-30:]
+    save_review_state(st.session_state.review_state)
+
+
+def due_review_cards(cards):
+    today = str(date.today())
+    return [card for card in cards if get_review_card(card).get("due", today) <= today]
+
+
 def dashboard_snapshot():
     attempts = load_history()
     summaries = load_summary_history()
@@ -1480,8 +1534,9 @@ def dashboard_snapshot():
 
     total_questions = sum(int(item.get("total", 0)) for item in attempts)
     best_score = max((round(item["score"] / item["total"] * 100) for item in attempts if item.get("total")), default=0)
-    mastered = sum(1 for status in st.session_state.get("flashcard_status", {}).values() if status == "Mastered")
-    current_cards = len(st.session_state.get("flashcards") or [])
+    current_flashcards = st.session_state.get("flashcards") or []
+    mastered = sum(1 for card in current_flashcards if get_review_card(card).get("box", 1) >= 5)
+    current_cards = len(current_flashcards)
     readiness = min(100, round(best_score * 0.7 + (20 if st.session_state.get("summary_text") else 0) + (10 if current_cards else 0)))
 
     days = sorted({item.get("timestamp", "")[:10] for item in attempts if item.get("timestamp")}, reverse=True)
@@ -1528,6 +1583,8 @@ defaults = {
     "summary_text": "", "summary_audio": None,
     "theme_mode": "Light", "reduced_motion": False,
     "flashcards": None, "flashcard_status": {},
+    "workspace_documents": {}, "review_state": load_review_state(),
+    "workspace_name": "My Study Workspace",
 } 
 for k, v in defaults.items(): 
     if k not in st.session_state: 
@@ -1598,41 +1655,41 @@ with st.sidebar:
         st.session_state.theme_mode = selected_theme
         st.session_state.reduced_motion = reduced_motion
         st.rerun()
-    uploaded_file = st.file_uploader("Choose study material", type=SUPPORTED_TYPES, label_visibility="collapsed", help="Supported formats: PDF, DOCX, PPTX, TXT, and Markdown")
+    workspace_name = st.text_input("Workspace name", value=st.session_state.get("workspace_name", "My Study Workspace"), label_visibility="collapsed", placeholder="Name this course workspace")
+    uploaded_files = st.file_uploader("Choose study materials", type=SUPPORTED_TYPES, accept_multiple_files=True, label_visibility="collapsed", help="Upload multiple PDF, DOCX, PPTX, TXT, or Markdown files")
 
-    if uploaded_file:
-        if uploaded_file.size > 25 * 1024 * 1024:
-            st.error("This file is larger than 25 MB. Please upload a smaller study document.")
+    if uploaded_files:
+        if sum(file.size for file in uploaded_files) > 50 * 1024 * 1024:
+            st.error("This workspace is larger than 50 MB. Please upload a smaller set of documents.")
             st.stop()
-        signature = f"{uploaded_file.name}:{uploaded_file.size}"
+        signature = "|".join(f"{file.name}:{file.size}" for file in uploaded_files)
         if st.session_state.document_signature != signature:
-            extension = uploaded_file.name.rsplit(".", 1)[-1].lower() if "." in uploaded_file.name else ""
-            label = SUPPORTED_LABELS.get(extension, extension.upper())
-            with st.spinner(f"Reading your {label}..."):
-                extracted, detected_type = extract_document_text(uploaded_file)
-                st.session_state.pdf_text = clean_text(extracted)
-                st.session_state.document_name = uploaded_file.name
-                st.session_state.document_type = detected_type
-                st.session_state.document_signature = signature
-                st.session_state.summary_text = ""
-                st.session_state.summary_audio = None
-                st.session_state.flashcards = None
-                st.session_state.flashcard_status = {}
-                reset_quiz()
+            documents = {}
+            with st.spinner("Reading your workspace documents..."):
+                for file in uploaded_files:
+                    extracted, detected_type = extract_document_text(file)
+                    documents[file.name] = {"type": detected_type, "text": clean_text(extracted), "size": file.size}
+            combined = "\n\n".join(f"\n[DOCUMENT: {name}]\n{data['text']}" for name, data in documents.items() if data["text"])
+            st.session_state.workspace_documents = documents
+            st.session_state.pdf_text = combined
+            st.session_state.workspace_name = workspace_name or "My Study Workspace"
+            st.session_state.document_name = st.session_state.workspace_name
+            st.session_state.document_type = "workspace"
+            st.session_state.document_signature = signature
+            st.session_state.summary_text = ""
+            st.session_state.summary_audio = None
+            st.session_state.flashcards = None
+            st.session_state.flashcard_status = {}
+            reset_quiz()
         if st.session_state.pdf_text:
-            label = SUPPORTED_LABELS.get(st.session_state.document_type, "document")
-            st.success(f"✓ {label} loaded successfully")
+            st.success(f"✓ Workspace ready · {len(st.session_state.workspace_documents)} document(s)")
             word_count = len(st.session_state.pdf_text.split())
-            if st.session_state.document_type == "pdf":
-                section_count = st.session_state.pdf_text.count("[PAGE ")
-            elif st.session_state.document_type == "pptx":
-                section_count = st.session_state.pdf_text.count("[SLIDE ")
-            else:
-                # Word files do not have pages in the extracted text. Count
-                # non-empty paragraphs/tables as study sections instead.
-                section_count = len([line for line in st.session_state.pdf_text.splitlines() if line.strip()])
+            section_count = sum(st.session_state.pdf_text.count(marker) for marker in ["[PAGE ", "[SLIDE ", "[DOCUMENT: ", "[TABLE "])
             st.metric("📖 Words", f"{word_count:,}")
             st.metric("🧩 Sections", section_count or "—")
+            with st.expander("📚 Workspace files"):
+                for name, data in st.session_state.workspace_documents.items():
+                    st.write(f"**{name}** · {SUPPORTED_LABELS.get(data['type'], data['type'].upper())} · {len(data['text'].split()):,} words")
 
     st.divider()
     st.markdown("### ⚙️ Study Settings") 
@@ -1815,17 +1872,27 @@ with tabs[3]:
     if st.session_state.get("flashcards"):
         flashcards = st.session_state.flashcards
         render_flashcards(flashcards)
-        st.markdown("#### Review progress")
-        st.caption("Mark cards as mastered or needing practice to build a simple spaced-review queue.")
-        review_labels = [f"Card {i + 1}: {card['front']}" for i, card in enumerate(flashcards)]
-        current_review = [review_labels[i] for i, card in enumerate(flashcards) if st.session_state.flashcard_status.get(str(i)) == "Needs practice"]
-        needs_practice = st.multiselect("Cards to revisit", review_labels, default=current_review, key="flashcard_review_queue")
-        st.session_state.flashcard_status = {str(i): ("Needs practice" if review_labels[i] in needs_practice else "Mastered") for i in range(len(flashcards))}
+        due_cards = due_review_cards(flashcards)
+        mastered_cards = sum(1 for card in flashcards if get_review_card(card).get("box", 1) >= 5)
+        st.markdown(f"#### Daily review queue · **{len(due_cards)} due today**")
+        st.caption(f"Mastered {mastered_cards}/{len(flashcards)} cards · Rate each card after reviewing it to schedule the next session.")
+        rating_options = ["Again", "Hard", "Good", "Easy"]
+        for i, card in enumerate(flashcards):
+            state = get_review_card(card)
+            label = f"Card {i + 1}: {card['front']}"
+            with st.expander(f"{label} · {state.get('last_rating', 'New')} · due {state.get('due', str(date.today()))}"):
+                rating = st.radio("How well did you recall it?", rating_options, horizontal=True, key=f"rating_{i}")
+                if st.button("Save review rating", key=f"save_rating_{i}"):
+                    rate_review_card(card, rating)
+                    st.success(f"Saved {rating}. Next review: {get_review_card(card)['due']}")
+                if state.get("history"):
+                    st.caption("Learning history: " + " · ".join(f"{item['date']} {item['rating']}" for item in state["history"][-5:]))
         csv_buffer = StringIO()
         writer = csv.writer(csv_buffer)
-        writer.writerow(["Front", "Topic", "Visual type", "Visual title", "Visual items", "Review status"])
+        writer.writerow(["Front", "Topic", "Visual type", "Visual title", "Visual items", "Last rating", "Due date", "Leitner box"])
         for i, card in enumerate(flashcards):
-            writer.writerow([card["front"], card["topic"], card["visual_type"], card["visual_title"], " | ".join(card["visual_items"]), st.session_state.flashcard_status.get(str(i), "New")])
+            review = get_review_card(card)
+            writer.writerow([card["front"], card["topic"], card["visual_type"], card["visual_title"], " | ".join(card["visual_items"]), review.get("last_rating", "New"), review.get("due", str(date.today())), review.get("box", 1)])
         st.download_button("⬇️ Export flashcards as CSV", csv_buffer.getvalue(), file_name="studient-flashcards.csv", mime="text/csv", key="export_flashcards_csv")
  
 # ---------------- LONG QUESTIONS ---------------- 
@@ -2048,8 +2115,8 @@ with tabs[10]:
 
 # ---------------- ASK PDF ---------------- 
 with tabs[11]: 
-    st.header("💬 Ask Questions About Your PDF") 
-    st.caption("Ask questions and STudient AI will search your uploaded material.") 
+    st.header("💬 Ask Questions About Your Workspace") 
+    st.caption("Ask questions and Studient AI will search across every uploaded course document.") 
  
     use_general_knowledge = st.checkbox( 
         "💡 Also use general knowledge (for brainstorming, improvements, opinions — not just facts in the PDF)", 
@@ -2087,11 +2154,11 @@ DOCUMENT CONTENT:
 STUDENT QUESTION: 
 {user_question}""" 
             else: 
-                prompt = f"""Answer the student's question using ONLY the information in the provided PDF material. 
+                prompt = f"""Answer the student's question using ONLY the information in the provided workspace material. 
 If the answer cannot be found, say clearly: "The answer is not available in the uploaded PDF." 
 Do not invent facts. Explain clearly, use bullet points if useful. 
  
-PDF MATERIAL: 
+WORKSPACE MATERIAL: 
 {context} 
  
 STUDENT QUESTION: 
