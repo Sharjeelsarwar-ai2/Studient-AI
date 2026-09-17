@@ -853,6 +853,44 @@ html("""
   .main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] [data-baseweb="tab"] { padding:9px 10px !important; font-size:12px !important; }
   .main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { padding:10px 12px !important; font-size:12px !important; }
 }
+
+/* OUTER PARENT TABS: enlarged padding and height. The :has() selector
+   identifies the three-section tab set because it contains nested tabs. */
+.main [data-testid="stTabs"]:has(> div[data-baseweb="tab-panel"] [data-testid="stTabs"]) > div[data-baseweb="tab-list"] {
+  display:flex !important;
+  gap:0 !important;
+  min-height:112px !important;
+  height:112px !important;
+  padding:10px !important;
+}
+.main [data-testid="stTabs"]:has(> div[data-baseweb="tab-panel"] [data-testid="stTabs"]) > div[data-baseweb="tab-list"] [data-baseweb="tab"] {
+  flex:1 1 0 !important;
+  min-width:0 !important;
+  min-height:92px !important;
+  height:92px !important;
+  padding:30px 42px !important;
+  justify-content:center !important;
+  text-align:center !important;
+  font-size:21px !important;
+  font-weight:800 !important;
+  border-radius:22px !important;
+}
+.main [data-testid="stTabs"]:has(> div[data-baseweb="tab-panel"] [data-testid="stTabs"]) > div[data-baseweb="tab-list"] [aria-selected="true"] {
+  padding:30px 42px !important;
+}
+@media (max-width:700px) {
+  .main [data-testid="stTabs"]:has(> div[data-baseweb="tab-panel"] [data-testid="stTabs"]) > div[data-baseweb="tab-list"] {
+    min-height:78px !important;
+    height:78px !important;
+    padding:5px !important;
+  }
+  .main [data-testid="stTabs"]:has(> div[data-baseweb="tab-panel"] [data-testid="stTabs"]) > div[data-baseweb="tab-list"] [data-baseweb="tab"] {
+    min-height:68px !important;
+    height:68px !important;
+    padding:20px 8px !important;
+    font-size:12px !important;
+  }
+}
 </style>
 """)
  
