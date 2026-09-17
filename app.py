@@ -36,6 +36,8 @@ import random
 import time
 import zipfile
 import textwrap
+import base64
+import secrets
 import html as _html_escape_lib  # aliased: this file defines its own html() render helper below 
 from io import BytesIO, StringIO
 import csv
@@ -76,6 +78,12 @@ try:
     from streamlit_autorefresh import st_autorefresh
 except ImportError:
     st_autorefresh = None
+
+try:
+    from cryptography.fernet import Fernet, InvalidToken
+except ImportError:
+    Fernet = None
+    InvalidToken = Exception
  
 # ============================================================ 
 # PAGE CONFIG 
@@ -742,6 +750,28 @@ label.sm-flip-inner:focus-within { outline:3px solid #0ea5e9; outline-offset:5px
 @media (max-width: 640px) { .sm-hero { padding: 40px 18px 34px; border-radius: 24px; } .sm-hero h1 { font-size: 38px; } .sm-hero p.sub { font-size: 16px; } .sm-feature { min-height: 0; } .sm-document-name { font-size: 17px; } }
 </style> 
 """) 
+
+html("""
+<style>
+@media (max-width: 700px) {
+  .main .block-container { padding: .85rem .7rem 5.5rem !important; }
+  .sm-hero { margin: 0 -2px 16px; padding: 32px 18px 28px !important; }
+  .sm-dashboard { padding: 18px 14px !important; border-radius: 22px; }
+  .sm-dashboard-grid, .sm-dashboard-columns { grid-template-columns: 1fr !important; }
+  .sm-dashboard-gauge { grid-column:auto !important; }
+  .sm-document-bar { padding: 11px 12px; }
+  .sm-document-name { max-width: 100%; font-size: 16px; }
+  .sm-flip-grid { display:flex !important; grid-template-columns:none !important; gap:14px !important; overflow-x:auto; overscroll-behavior-x:contain; scroll-snap-type:x mandatory; padding:2px 4px 14px; }
+  .sm-flip-grid > .sm-flip-card { flex:0 0 86vw; scroll-snap-align:center; }
+  .sm-flip-card, .sm-flip-inner { min-height: 270px !important; }
+  .stButton > button, .stDownloadButton > button { min-height: 52px !important; font-size: 15px !important; }
+  [data-testid="stAudio"] audio { width: 100% !important; min-height: 48px; }
+  .stTabs [data-baseweb="tab-list"] { position: fixed !important; left: 0; right: 0; bottom: 0; top: auto !important; z-index: 1000; padding: 6px 4px !important; border-radius: 18px 18px 0 0 !important; overflow-x: auto; background: rgba(255,255,255,.92) !important; backdrop-filter: blur(18px); box-shadow: 0 -8px 24px rgba(31,25,90,.16) !important; }
+  .stTabs [data-baseweb="tab"] { min-width: 78px; min-height: 46px; padding: 8px 10px !important; font-size: 11px !important; }
+}
+.sm-privacy-note { margin-top: 8px; padding: 10px 12px; border-radius: 12px; color: var(--ink-faint); background: rgba(79,70,229,.06); border: 1px solid rgba(79,70,229,.12); font-size: 11px; line-height: 1.45; }
+</style>
+""")
  
 # ============================================================ 
 # GROQ CLIENT 
@@ -1525,18 +1555,101 @@ def render_mind_map(mind_map):
 HISTORY_FILE = "study_history.json" 
 SUMMARY_HISTORY_FILE = "summary_history.json"
 REVIEW_STATE_FILE = "flashcard_review_state.json"
+
+
+def privacy_secret():
+    """Read a deployment secret without ever displaying it in the UI."""
+    return os.environ.get("STUDIENT_ENCRYPTION_KEY") or os.environ.get("APP_SECRET") or ""
+
+
+def encryption_cipher():
+    secret = privacy_secret()
+    if Fernet is None or not secret:
+        return None
+    key = base64.urlsafe_b64encode(hashlib.sha256(secret.encode("utf-8")).digest())
+    return Fernet(key)
+
+
+def read_private_json(path, default):
+    if not os.path.exists(path):
+        return default
+    try:
+        raw = open(path, "rb").read()
+        cipher = encryption_cipher()
+        if cipher:
+            try:
+                raw = cipher.decrypt(raw)
+            except InvalidToken:
+                pass  # Support legacy unencrypted files during migration.
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
+        return default
+
+
+def write_private_json(path, value):
+    raw = json.dumps(value, indent=2, ensure_ascii=False).encode("utf-8")
+    cipher = encryption_cipher()
+    if cipher:
+        raw = cipher.encrypt(raw)
+    with open(path, "wb") as handle:
+        handle.write(raw)
+
+
+def secure_delete_file(path):
+    if not os.path.exists(path):
+        return
+    try:
+        size = os.path.getsize(path)
+        with open(path, "r+b", buffering=0) as handle:
+            handle.write(secrets.token_bytes(size))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.remove(path)
+    except OSError:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def delete_local_study_data():
+    for path in [HISTORY_FILE, SUMMARY_HISTORY_FILE, REVIEW_STATE_FILE]:
+        secure_delete_file(path)
+    for key in ["pdf_text", "document_name", "workspace_documents", "summary_text", "flashcards", "mind_map", "study_plan", "generated_material", "tutor_messages"]:
+        if key in st.session_state:
+            st.session_state[key] = {} if key == "workspace_documents" else [] if key == "tutor_messages" else None if key not in ["pdf_text", "document_name"] else ""
+
+
+def make_user_data_export():
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as pack:
+        pack.writestr("workspace.txt", st.session_state.get("pdf_text", ""))
+        pack.writestr("study-history.json", json.dumps(load_history(), indent=2))
+        pack.writestr("summary-history.json", json.dumps(load_summary_history(), indent=2))
+        pack.writestr("flashcard-review-state.json", json.dumps(st.session_state.get("review_state", {}), indent=2))
+        if st.session_state.get("summary_text"):
+            pack.writestr("current-summary.md", st.session_state.summary_text)
+        if st.session_state.get("study_plan"):
+            pack.writestr("study-plan.md", st.session_state.study_plan)
+    return buffer.getvalue()
+
+
+def apply_retention_policy(days):
+    if not days:
+        return
+    cutoff = datetime.now() - timedelta(days=int(days))
+    history = [item for item in load_history() if item.get("timestamp", "") >= cutoff.isoformat()]
+    summaries = [item for item in load_summary_history() if item.get("timestamp", "") >= cutoff.isoformat()]
+    write_private_json(HISTORY_FILE, history)
+    write_private_json(SUMMARY_HISTORY_FILE, summaries)
  
 def load_history(): 
-    if os.path.exists(HISTORY_FILE): 
-        try: 
-            with open(HISTORY_FILE, "r") as f: 
-                return json.load(f) 
-        except Exception: 
-            return [] 
-    return [] 
+    return read_private_json(HISTORY_FILE, [])
  
  
 def save_attempt(document_name, score, total, topic_results): 
+    if st.session_state.get("privacy_mode"):
+        return []
     history = load_history() 
     history.append({ 
         "timestamp": datetime.now().isoformat(timespec="seconds"), 
@@ -1544,8 +1657,7 @@ def save_attempt(document_name, score, total, topic_results):
         "duration_minutes": round(max(0, (time.time() - (st.session_state.get("test_started_at") or time.time())) / 60), 1),
     }) 
     try: 
-        with open(HISTORY_FILE, "w") as f: 
-            json.dump(history, f, indent=2) 
+        write_private_json(HISTORY_FILE, history)
     except Exception as e: 
         st.warning(f"Couldn't save this attempt to history: {e}") 
     return history 
@@ -1718,16 +1830,12 @@ WORKSPACE MATERIAL:
 
 
 def load_summary_history():
-    if os.path.exists(SUMMARY_HISTORY_FILE):
-        try:
-            with open(SUMMARY_HISTORY_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return []
-    return []
+    return read_private_json(SUMMARY_HISTORY_FILE, [])
 
 
 def save_summary(document_name, summary):
+    if st.session_state.get("privacy_mode"):
+        return
     history = load_summary_history()
     history.append({
         "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -1735,26 +1843,18 @@ def save_summary(document_name, summary):
         "preview": clean_speech_text(summary)[:280],
     })
     try:
-        with open(SUMMARY_HISTORY_FILE, "w") as f:
-            json.dump(history[-20:], f, indent=2)
+        write_private_json(SUMMARY_HISTORY_FILE, history[-20:])
     except Exception as e:
         st.warning(f"Couldn't save summary activity: {e}")
 
 
 def load_review_state():
-    if os.path.exists(REVIEW_STATE_FILE):
-        try:
-            with open(REVIEW_STATE_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
+    return read_private_json(REVIEW_STATE_FILE, {})
 
 
 def save_review_state(state):
     try:
-        with open(REVIEW_STATE_FILE, "w") as f:
-            json.dump(state, f, indent=2)
+        write_private_json(REVIEW_STATE_FILE, state)
     except Exception as e:
         st.warning(f"Couldn't save flashcard review progress: {e}")
 
@@ -1870,6 +1970,7 @@ defaults = {
     "important_questions": None, "mcq_questions": None,
     "study_plan": None, "tutor_messages": [], "tutor_level": "Intermediate",
     "generated_material": None, "generated_material_type": "",
+    "privacy_mode": False, "retention_days": 0,
 } 
 for k, v in defaults.items(): 
     if k not in st.session_state: 
@@ -1958,6 +2059,23 @@ with st.sidebar:
         st.session_state.font_scale = font_scale
         st.rerun()
     workspace_name = st.text_input("Workspace name", value=st.session_state.get("workspace_name", "My Study Workspace"), label_visibility="collapsed", placeholder="Name this course workspace")
+    with st.expander("🔐 Privacy & data controls"):
+        privacy_mode = st.checkbox("Private session mode", value=st.session_state.privacy_mode, help="Do not save new test attempts or summaries to local history.")
+        retention_options = {"Keep forever": 0, "Keep 7 days": 7, "Keep 30 days": 30, "Keep 90 days": 90}
+        retention_label = st.selectbox("History retention", list(retention_options), index=list(retention_options.values()).index(st.session_state.retention_days))
+        if privacy_mode != st.session_state.privacy_mode or retention_options[retention_label] != st.session_state.retention_days:
+            st.session_state.privacy_mode = privacy_mode
+            st.session_state.retention_days = retention_options[retention_label]
+            apply_retention_policy(st.session_state.retention_days)
+            st.rerun()
+        export_data = make_user_data_export()
+        st.download_button("⬇️ Export my study data", export_data, file_name="studient-data-export.zip", mime="application/zip", key="export_user_data")
+        confirm_delete = st.checkbox("I understand this permanently deletes local study data", key="confirm_delete_data")
+        if st.button("🗑️ Securely delete local data", key="delete_local_data", disabled=not confirm_delete):
+            delete_local_study_data()
+            st.success("Local study data was securely deleted from this app instance.")
+            st.rerun()
+        html('<div class="sm-privacy-note">API keys are read only from environment variables or Streamlit secrets and are never included in exports. This version has no account system; deletion removes local workspace history and session data.</div>')
     uploaded_files = st.file_uploader("Choose study materials", type=SUPPORTED_TYPES, accept_multiple_files=True, label_visibility="collapsed", help="Upload multiple PDF, DOCX, PPTX, TXT, or Markdown files")
 
     if uploaded_files:
