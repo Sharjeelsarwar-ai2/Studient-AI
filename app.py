@@ -2216,15 +2216,24 @@ render_dashboard()
  
 st.markdown("<br>", unsafe_allow_html=True) 
  
-# ============================================================ 
-# FLAT TAB ROW — everything in one scrollable line 
-# ============================================================ 
- 
-tabs = st.tabs([ 
-    "📚 Summary", "📝 Questions", "❓ MCQs", "🎴 Flashcards", 
-    "📖 Long Questions", "🎯 Short Questions", "🔍 Key Concepts", 
-    "📊 Difficulty", "🧪 Practice Test", "📈 Analytics", "🧠 Mind Map", "🗓️ Study Plan", "🧑‍🏫 AI Tutor", "🧰 Study Materials", "📝 Sample Paper", "💬 Ask Workspace",
-]) 
+# ============================================================
+# ORGANIZED THREE-SECTION NAVIGATION
+# ============================================================
+
+section_tabs = st.tabs(["📚 Study Desk", "🎨 AI Studio", "🧠 AI Learning"])
+tabs = [None] * 16
+with section_tabs[0]:
+    st.caption("Read, ask, and understand your uploaded workspace.")
+    desk_tabs = st.tabs(["📚 Summary", "🔍 Key Concepts", "💬 Ask Workspace"])
+    tabs[0], tabs[6], tabs[15] = desk_tabs[0], desk_tabs[1], desk_tabs[2]
+with section_tabs[1]:
+    st.caption("Create active revision materials, practice, and track progress.")
+    studio_tabs = st.tabs(["🎴 Flashcards", "❓ MCQs", "📝 Questions", "📖 Long Questions", "🎯 Short Questions", "📊 Difficulty", "🧪 Practice Test", "📈 Analytics", "🧠 Mind Map"])
+    tabs[3], tabs[2], tabs[1], tabs[4], tabs[5], tabs[7], tabs[8], tabs[9], tabs[10] = studio_tabs
+with section_tabs[2]:
+    st.caption("Use AI to plan, tutor, and generate exam-ready materials.")
+    learning_tabs = st.tabs(["🗓️ Study Plan", "🧑‍🏫 AI Tutor", "🧰 Study Materials", "📝 Sample Paper"])
+    tabs[11], tabs[12], tabs[13], tabs[14] = learning_tabs
  
 # ---------------- SUMMARY ---------------- 
 with tabs[0]: 
