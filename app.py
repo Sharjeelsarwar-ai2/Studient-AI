@@ -1837,6 +1837,30 @@ WORKSPACE MATERIAL:
     return ask_groq(prompt, max_tokens=3600)
 
 
+def generate_sample_paper(duration_minutes, total_marks, difficulty, section_mix, instructions):
+    context = get_relevant_chunks(st.session_state.pdf_text, "all important exam questions concepts definitions processes formulas examples", max_chunks=18, max_context_chars=24000)
+    prompt = f"""Create a complete university examination sample paper based strictly on the study material below.
+Duration: {duration_minutes} minutes
+Total marks: {total_marks}
+Difficulty: {difficulty}
+Requested sections: {section_mix}
+Additional instructions: {instructions or 'Use a balanced university exam format.'}
+
+Return polished markdown with:
+1. University-style title, instructions, duration, total marks, and suggested time allocation.
+2. Clearly numbered sections and questions with marks per question.
+3. A balanced mix of important questions from across the entire material, not just one chapter.
+4. Optional choices where appropriate.
+5. A separate answer key/model-answer section after the paper with concise marking points and explanations.
+6. A topic coverage note showing which major topics were tested.
+
+Avoid invented facts. If the material lacks enough information for a question, omit it and use another supported concept.
+
+FULL WORKSPACE STUDY MATERIAL:
+{context}"""
+    return ask_groq(prompt, max_tokens=6500)
+
+
 def load_summary_history():
     return read_private_json(SUMMARY_HISTORY_FILE, [])
 
@@ -1977,7 +2001,7 @@ defaults = {
     "incorrect_questions": [],
     "important_questions": None, "mcq_questions": None,
     "study_plan": None, "tutor_messages": [], "tutor_level": "Intermediate",
-    "generated_material": None, "generated_material_type": "",
+    "generated_material": None, "generated_material_type": "", "sample_paper": None,
     "privacy_mode": False, "retention_days": 0,
 } 
 for k, v in defaults.items(): 
@@ -2199,7 +2223,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 tabs = st.tabs([ 
     "📚 Summary", "📝 Questions", "❓ MCQs", "🎴 Flashcards", 
     "📖 Long Questions", "🎯 Short Questions", "🔍 Key Concepts", 
-    "📊 Difficulty", "🧪 Practice Test", "📈 Analytics", "🧠 Mind Map", "💬 Ask PDF", "🗓️ Study Plan", "🧑‍🏫 AI Tutor", "🧰 Study Materials",
+    "📊 Difficulty", "🧪 Practice Test", "📈 Analytics", "🧠 Mind Map", "🗓️ Study Plan", "🧑‍🏫 AI Tutor", "🧰 Study Materials", "📝 Sample Paper", "💬 Ask Workspace",
 ]) 
  
 # ---------------- SUMMARY ---------------- 
@@ -2630,13 +2654,13 @@ with tabs[10]:
     else:
         html('<div class="sm-card"><p>Generate a mind map to explore your document visually. Each branch is grounded in the uploaded material.</p></div>')
 
-# ---------------- ASK PDF ---------------- 
-with tabs[11]: 
-    st.header("💬 Ask Questions About Your Workspace") 
-    st.caption("Ask questions and Studient AI will search across every uploaded course document.") 
+# ---------------- ASK WORKSPACE ---------------- 
+with tabs[15]: 
+    st.header("💬 Ask Workspace / Outside Knowledge") 
+    st.caption("Ask questions grounded in your uploaded workspace, or optionally let Studient AI add clearly labeled general knowledge.") 
  
     use_general_knowledge = st.checkbox( 
-        "💡 Also use general knowledge (for brainstorming, improvements, opinions — not just facts in the PDF)", 
+        "💡 Include outside / general knowledge", 
         value=False, 
         help="Off = strict, hallucination-safe answers grounded only in your PDF (best for studying facts). " 
              "On = the PDF is used as context, but the AI can add its own knowledge and ideas — " 
@@ -2689,7 +2713,7 @@ STUDENT QUESTION:
                 st.markdown(answer) 
 
 # ---------------- STUDY PLAN ----------------
-with tabs[12]:
+with tabs[11]:
     st.header("🗓️ Personalized Study Plan")
     st.caption("Turn your exam date, goals, availability, and weak topics into a practical daily plan grounded in your workspace.")
     plan_col1, plan_col2 = st.columns(2)
@@ -2710,7 +2734,7 @@ with tabs[12]:
         st.download_button("⬇️ Download study plan", st.session_state.study_plan, file_name="studient-study-plan.md", mime="text/markdown", key="download_study_plan")
 
 # ---------------- AI TUTOR ----------------
-with tabs[13]:
+with tabs[12]:
     st.header("🧑‍🏫 AI Tutor")
     st.caption("Learn through guided questions, progressive hints, and explanations grounded in your workspace.")
     tutor_col1, tutor_col2 = st.columns(2)
@@ -2737,7 +2761,7 @@ with tabs[13]:
         st.rerun()
 
 # ---------------- STUDY MATERIALS ----------------
-with tabs[14]:
+with tabs[13]:
     st.header("🧰 Study Materials Lab")
     st.caption("Generate focused revision assets only when you need them, keeping large workspaces fast and uncluttered.")
     material_type = st.selectbox("Material type", ["Cheat sheet", "Formula sheet", "Glossary", "Concept comparison table", "Timeline summary", "Case studies", "Lab-viva questions", "Oral examination questions"], key="material_type")
@@ -2752,6 +2776,27 @@ with tabs[14]:
         html(f'<div class="sm-answer"><div class="title">🧰 {st.session_state.generated_material_type}</div></div>')
         st.markdown(st.session_state.generated_material)
         st.download_button("⬇️ Download study material", st.session_state.generated_material, file_name=f"studient-{st.session_state.generated_material_type.lower().replace(' ', '-')}.md", mime="text/markdown", key="download_generated_material")
+
+# ---------------- UNIVERSITY SAMPLE PAPER ----------------
+with tabs[14]:
+    st.header("📝 University Sample Paper")
+    st.caption("Generate a complete exam-style paper from important questions across your entire study workspace, including a model-answer key.")
+    paper_col1, paper_col2 = st.columns(2)
+    with paper_col1:
+        paper_duration = st.number_input("Exam duration (minutes)", min_value=30, max_value=300, value=120, step=15, key="paper_duration")
+        paper_marks = st.number_input("Total marks", min_value=20, max_value=200, value=100, step=10, key="paper_marks")
+        paper_difficulty = st.selectbox("Difficulty", ["Balanced university level", "Challenging", "Revision-friendly", "Final exam level"], key="paper_difficulty")
+    with paper_col2:
+        paper_sections = st.multiselect("Section mix", ["MCQs", "Short answers", "Long answers", "Problems / calculations", "Case analysis", "Essay questions"], default=["MCQs", "Short answers", "Long answers"], key="paper_sections")
+        paper_instructions = st.text_area("Additional exam instructions", placeholder="e.g. Include questions from every chapter and emphasize processes.", key="paper_instructions")
+    if st.button("✨ Generate full sample paper", key="generate_sample_paper"):
+        with st.spinner("Building your university-style sample paper..."):
+            st.session_state.sample_paper = generate_sample_paper(paper_duration, paper_marks, paper_difficulty, ", ".join(paper_sections), paper_instructions)
+        st.rerun()
+    if st.session_state.get("sample_paper"):
+        html('<div class="sm-answer"><div class="title">📝 University sample paper with model answers</div></div>')
+        st.markdown(st.session_state.sample_paper)
+        st.download_button("⬇️ Download sample paper", st.session_state.sample_paper, file_name="studient-university-sample-paper.md", mime="text/markdown", key="download_sample_paper")
 
 # ============================================================ 
 # FOOTER 
