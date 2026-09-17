@@ -763,90 +763,100 @@ html("""
 .sm-card, .sm-dashboard, .sm-feature, .sm-metric, .sm-document-bar, .sm-progress-dashboard { will-change:auto !important; }
 
 /* ============================================================
-   NAVIGATION HIERARCHY FIX
-   - Parent tabs (Study Desk / AI Studio / AI Learning) = 3 long, equal-width pills
-   - Child tabs (Summary / Flashcards / ...) = compact pills below
-   - Removes the "between tab" underline/highlight bar that appeared between rows
+   TAB NAVIGATION — FINAL FIX
+   Parent tabs (Study Desk / AI Studio / AI Learning): full width, three equal columns.
+   Child tabs (Summary / Key Concepts / ...): compact pills underneath.
+   Removes the "between tab" underline/highlight bar.
    ============================================================ */
 
-/* Kill Streamlit's default underline + moving highlight everywhere */
-.stTabs [data-baseweb="tab-highlight"],
-.stTabs [data-baseweb="tab-border"] {
+/* Kill Streamlit's animated underline slider + bottom border globally */
+[data-baseweb="tab-highlight"],
+[data-baseweb="tab-border"] {
   display: none !important;
   height: 0 !important;
+  opacity: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
 }
 
-/* ---------- PARENT ROW (first st.tabs on the page) ---------- */
-.main [data-testid="stTabs"]:first-of-type { margin-top:-10px; }
-
-.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] {
+/* ---------- PARENT TABS (top-level, NOT inside a tab-panel) ---------- */
+.main [data-testid="stTabs"]:not([data-baseweb="tab-panel"] [data-testid="stTabs"]) > [data-baseweb="tab-list"] {
   display: flex !important;
+  flex-wrap: nowrap !important;
   width: 100% !important;
-  position: sticky !important;
-  top: 3.15rem;
-  z-index: 30;
-  min-height: 68px;
-  padding: 9px 14px !important;
-  gap: 12px !important;
-  border-radius: 22px !important;      /* full pill bar, no bottom-only corners */
-  background: linear-gradient(110deg, rgba(224,231,255,.94), rgba(255,255,255,.88) 48%, rgba(253,242,255,.94)) !important;
-  border: 1px solid rgba(124,58,237,.18) !important;   /* subtle outline, no bottom divider */
+  gap: 10px !important;
+  padding: 10px !important;
+  margin: 0 0 14px 0 !important;
+  border-radius: 22px !important;
+  background: linear-gradient(110deg, rgba(224,231,255,.94), rgba(255,255,255,.90) 48%, rgba(253,242,255,.94)) !important;
+  border: 1px solid rgba(124,58,237,.18) !important;
   box-shadow: 0 10px 24px rgba(31,25,90,.12) !important;
-  overflow-x: visible !important;
-}
-
-/* each parent tab stretches to fill an equal 1/3 of the row */
-.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] [data-baseweb="tab"] {
-  flex: 1 1 0 !important;
-  min-width: 0 !important;
-  min-height: 50px;
-  padding: 12px 25px !important;
-  border-radius: 999px !important;
-  font-size: 17px !important;
-  font-weight: 750;
-  letter-spacing: .1px;
-  justify-content: center !important;
-  text-align: center !important;
-}
-
-.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] [aria-selected="true"] {
-  color: #fff !important;
-  background: linear-gradient(135deg, var(--accent1), var(--accent2), var(--accent4)) !important;
-  box-shadow: 0 8px 18px rgba(79,70,229,.28) !important;
-}
-
-/* ---------- CHILD ROW (nested st.tabs inside a parent) ---------- */
-.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] {
-  display: flex !important;
-  width: 100% !important;
-  position: relative !important;
+  overflow: visible !important;
+  position: static !important;
   top: auto !important;
-  z-index: 1;
-  margin: 8px 0 20px;
-  padding: 6px 8px !important;
-  gap: 6px !important;
-  border-radius: 15px !important;
-  background: rgba(255,255,255,.38) !important;
-  border: 1px solid rgba(124,58,237,.10) !important;   /* no bottom-only divider */
+}
+
+.main [data-testid="stTabs"]:not([data-baseweb="tab-panel"] [data-testid="stTabs"]) > [data-baseweb="tab-list"] > [data-baseweb="tab"] {
+  flex: 1 1 0 !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  justify-content: center !important;
+  align-items: center !important;
+  text-align: center !important;
+  min-height: 56px !important;
+  padding: 14px 20px !important;
+  border-radius: 16px !important;
+  font-size: 17px !important;
+  font-weight: 750 !important;
+  letter-spacing: .2px !important;
+  color: var(--ink-soft) !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  white-space: nowrap !important;
+}
+
+.main [data-testid="stTabs"]:not([data-baseweb="tab-panel"] [data-testid="stTabs"]) > [data-baseweb="tab-list"] > [data-baseweb="tab"][aria-selected="true"] {
+  color: #fff !important;
+  background: linear-gradient(135deg, var(--accent1), var(--accent2) 55%, var(--accent4)) !important;
+  box-shadow: 0 8px 20px rgba(79,70,229,.28) !important;
+}
+
+/* ---------- CHILD TABS (nested inside a tab-panel) ---------- */
+.main [data-baseweb="tab-panel"] [data-testid="stTabs"] > [data-baseweb="tab-list"] {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  width: 100% !important;
+  gap: 4px !important;
+  padding: 6px !important;
+  margin: 6px 0 20px 0 !important;
+  border-radius: 14px !important;
+  background: rgba(255,255,255,.42) !important;
+  border: 1px solid rgba(124,58,237,.10) !important;
   box-shadow: none !important;
   overflow-x: auto !important;
+  position: static !important;
+  top: auto !important;
 }
 
-.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] [data-baseweb="tab"] {
+.main [data-baseweb="tab-panel"] [data-testid="stTabs"] > [data-baseweb="tab-list"] > [data-baseweb="tab"] {
   flex: 0 0 auto !important;
-  min-height: 38px;
-  padding: 8px 14px !important;
-  border-radius: 10px;
-  color: var(--ink-soft);
-  font-size: 12px !important;
-  font-weight: 650;
+  min-height: 38px !important;
+  padding: 8px 16px !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  font-weight: 650 !important;
+  color: var(--ink-soft) !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  white-space: nowrap !important;
 }
 
-.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] [aria-selected="true"] {
+.main [data-baseweb="tab-panel"] [data-testid="stTabs"] > [data-baseweb="tab-list"] > [data-baseweb="tab"][aria-selected="true"] {
   color: var(--accent1) !important;
-  background: rgba(79,70,229,.11) !important;
+  background: rgba(79,70,229,.12) !important;
   box-shadow: none !important;
 }
 
@@ -863,8 +873,24 @@ html("""
   .sm-flip-card, .sm-flip-inner { min-height: 270px !important; }
   .stButton > button, .stDownloadButton > button { min-height: 52px !important; font-size: 15px !important; }
   [data-testid="stAudio"] audio { width: 100% !important; min-height: 48px; }
-  .stTabs [data-baseweb="tab-list"] { position: fixed !important; left: 0; right: 0; bottom: 0; top: auto !important; z-index: 1000; padding: 6px 4px !important; border-radius: 18px 18px 0 0 !important; overflow-x: auto; background: rgba(255,255,255,.92) !important; backdrop-filter: blur(18px); box-shadow: 0 -8px 24px rgba(31,25,90,.16) !important; }
-  .stTabs [data-baseweb="tab"] { min-width: 78px; min-height: 46px; padding: 8px 10px !important; font-size: 11px !important; }
+  /* Keep parent row pinned to bottom on mobile as a nav bar; child row stays inline */
+  .main [data-testid="stTabs"]:not([data-baseweb="tab-panel"] [data-testid="stTabs"]) > [data-baseweb="tab-list"] {
+    position: fixed !important;
+    left: 0; right: 0; bottom: 0; top: auto !important;
+    z-index: 1000;
+    padding: 6px 4px !important;
+    border-radius: 18px 18px 0 0 !important;
+    background: rgba(255,255,255,.92) !important;
+    backdrop-filter: blur(18px);
+    box-shadow: 0 -8px 24px rgba(31,25,90,.16) !important;
+    overflow-x: auto !important;
+  }
+  .main [data-testid="stTabs"]:not([data-baseweb="tab-panel"] [data-testid="stTabs"]) > [data-baseweb="tab-list"] > [data-baseweb="tab"] {
+    min-width: 0 !important;
+    min-height: 46px !important;
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+  }
 }
 .sm-privacy-note { margin-top: 8px; padding: 10px 12px; border-radius: 12px; color: var(--ink-faint); background: rgba(79,70,229,.06); border: 1px solid rgba(79,70,229,.12); font-size: 11px; line-height: 1.45; }
 </style>
