@@ -763,47 +763,73 @@ html("""
 .sm-card, .sm-dashboard, .sm-feature, .sm-metric, .sm-document-bar, .sm-progress-dashboard { will-change:auto !important; }
 
 /* ============================================================
-   TAB NAVIGATION — FINAL FIX
-   Parent tabs (Study Desk / AI Studio / AI Learning): full width, three equal columns.
-   Child tabs (Summary / Key Concepts / ...): compact pills underneath.
-   Removes the "between tab" underline/highlight bar.
+   TAB NAVIGATION — FINAL FIX v3
+   Strategy (robust, no :not() with complex args, no .main prefix):
+   1) Every tab-list becomes a full-width flex row by default.
+   2) Every tab grows equally (flex:1).
+   3) Nested tab-lists (inside [data-baseweb="tab-panel"]) get
+      overridden back to compact — higher specificity wins.
+   4) Top-level tab-list gets the pill bar styling.
    ============================================================ */
 
-/* Kill Streamlit's animated underline slider + bottom border globally */
+/* 1) Kill Streamlit's default underline + animated slider */
 [data-baseweb="tab-highlight"],
 [data-baseweb="tab-border"] {
   display: none !important;
+  visibility: hidden !important;
+  width: 0 !important;
   height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
   opacity: 0 !important;
+  position: absolute !important;
+  pointer-events: none !important;
   background: transparent !important;
   box-shadow: none !important;
 }
 
-/* ---------- PARENT TABS (top-level, NOT inside a tab-panel) ---------- */
-.main [data-testid="stTabs"]:not([data-baseweb="tab-panel"] [data-testid="stTabs"]) > [data-baseweb="tab-list"] {
+/* 2) Every tab-list = full-width flex row */
+div[data-baseweb="tab-list"] {
   display: flex !important;
   flex-wrap: nowrap !important;
   width: 100% !important;
-  gap: 10px !important;
-  padding: 10px !important;
-  margin: 0 0 14px 0 !important;
-  border-radius: 22px !important;
+  align-items: stretch !important;
+  gap: 8px !important;
+  box-sizing: border-box !important;
+  overflow: visible !important;
+}
+
+/* 3) Every tab grows to fill the row equally */
+div[data-baseweb="tab-list"] > button[data-baseweb="tab"],
+div[data-baseweb="tab-list"] > div[data-baseweb="tab"] {
+  flex: 1 1 0% !important;
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+}
+
+/* 4) Style the top-level pill bar (parent row).
+      This selector also happens to match the nested tab-list, so the
+      nested override below (higher specificity) restores compactness. */
+.stTabs > div[data-baseweb="tab-list"] {
   background: linear-gradient(110deg, rgba(224,231,255,.94), rgba(255,255,255,.90) 48%, rgba(253,242,255,.94)) !important;
   border: 1px solid rgba(124,58,237,.18) !important;
+  border-radius: 22px !important;
+  padding: 10px !important;
+  margin: 0 0 14px 0 !important;
   box-shadow: 0 10px 24px rgba(31,25,90,.12) !important;
-  overflow: visible !important;
+  gap: 10px !important;
   position: static !important;
   top: auto !important;
 }
 
-.main [data-testid="stTabs"]:not([data-baseweb="tab-panel"] [data-testid="stTabs"]) > [data-baseweb="tab-list"] > [data-baseweb="tab"] {
-  flex: 1 1 0 !important;
-  width: auto !important;
-  min-width: 0 !important;
-  max-width: none !important;
-  justify-content: center !important;
-  align-items: center !important;
-  text-align: center !important;
+.stTabs > div[data-baseweb="tab-list"] > button[data-baseweb="tab"],
+.stTabs > div[data-baseweb="tab-list"] > div[data-baseweb="tab"] {
   min-height: 56px !important;
   padding: 14px 20px !important;
   border-radius: 16px !important;
@@ -814,34 +840,33 @@ html("""
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
-  white-space: nowrap !important;
 }
 
-.main [data-testid="stTabs"]:not([data-baseweb="tab-panel"] [data-testid="stTabs"]) > [data-baseweb="tab-list"] > [data-baseweb="tab"][aria-selected="true"] {
+.stTabs > div[data-baseweb="tab-list"] > button[data-baseweb="tab"][aria-selected="true"],
+.stTabs > div[data-baseweb="tab-list"] > div[data-baseweb="tab"][aria-selected="true"] {
   color: #fff !important;
   background: linear-gradient(135deg, var(--accent1), var(--accent2) 55%, var(--accent4)) !important;
   box-shadow: 0 8px 20px rgba(79,70,229,.28) !important;
 }
 
-/* ---------- CHILD TABS (nested inside a tab-panel) ---------- */
-.main [data-baseweb="tab-panel"] [data-testid="stTabs"] > [data-baseweb="tab-list"] {
-  display: flex !important;
-  flex-wrap: nowrap !important;
-  width: 100% !important;
-  gap: 4px !important;
-  padding: 6px !important;
-  margin: 6px 0 20px 0 !important;
-  border-radius: 14px !important;
+/* 5) OVERRIDE for nested (child) tab-lists. Higher specificity than #4
+      so these always win inside a tab-panel. */
+div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] {
   background: rgba(255,255,255,.42) !important;
   border: 1px solid rgba(124,58,237,.10) !important;
+  border-radius: 14px !important;
+  padding: 6px !important;
+  margin: 6px 0 20px 0 !important;
   box-shadow: none !important;
-  overflow-x: auto !important;
-  position: static !important;
-  top: auto !important;
+  gap: 4px !important;
+  justify-content: flex-start !important;
 }
 
-.main [data-baseweb="tab-panel"] [data-testid="stTabs"] > [data-baseweb="tab-list"] > [data-baseweb="tab"] {
+div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] > button[data-baseweb="tab"],
+div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] > div[data-baseweb="tab"] {
   flex: 0 0 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
   min-height: 38px !important;
   padding: 8px 16px !important;
   border-radius: 10px !important;
@@ -851,10 +876,10 @@ html("""
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
-  white-space: nowrap !important;
 }
 
-.main [data-baseweb="tab-panel"] [data-testid="stTabs"] > [data-baseweb="tab-list"] > [data-baseweb="tab"][aria-selected="true"] {
+div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] > button[data-baseweb="tab"][aria-selected="true"],
+div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] > div[data-baseweb="tab"][aria-selected="true"] {
   color: var(--accent1) !important;
   background: rgba(79,70,229,.12) !important;
   box-shadow: none !important;
@@ -873,20 +898,29 @@ html("""
   .sm-flip-card, .sm-flip-inner { min-height: 270px !important; }
   .stButton > button, .stDownloadButton > button { min-height: 52px !important; font-size: 15px !important; }
   [data-testid="stAudio"] audio { width: 100% !important; min-height: 48px; }
-  /* Keep parent row pinned to bottom on mobile as a nav bar; child row stays inline */
-  .main [data-testid="stTabs"]:not([data-baseweb="tab-panel"] [data-testid="stTabs"]) > [data-baseweb="tab-list"] {
+
+  /* On mobile, only the top-level tab bar moves to a bottom nav.
+     Selector matches top-level tab-lists but is overridden for child ones
+     by the higher-specificity tab-panel rule below it. */
+  .stTabs > div[data-baseweb="tab-list"] {
     position: fixed !important;
     left: 0; right: 0; bottom: 0; top: auto !important;
     z-index: 1000;
     padding: 6px 4px !important;
     border-radius: 18px 18px 0 0 !important;
-    background: rgba(255,255,255,.92) !important;
+    background: rgba(255,255,255,.94) !important;
     backdrop-filter: blur(18px);
     box-shadow: 0 -8px 24px rgba(31,25,90,.16) !important;
     overflow-x: auto !important;
   }
-  .main [data-testid="stTabs"]:not([data-baseweb="tab-panel"] [data-testid="stTabs"]) > [data-baseweb="tab-list"] > [data-baseweb="tab"] {
-    min-width: 0 !important;
+
+  div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] {
+    position: static !important;
+    box-shadow: none !important;
+  }
+
+  .stTabs > div[data-baseweb="tab-list"] > button[data-baseweb="tab"],
+  .stTabs > div[data-baseweb="tab-list"] > div[data-baseweb="tab"] {
     min-height: 46px !important;
     padding: 8px 10px !important;
     font-size: 12px !important;
