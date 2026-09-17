@@ -1,20 +1,15 @@
-# Build the user's full app with ONLY the flashcard-related changes applied.
-# This keeps the rest of the supplied code unchanged while making the flashcards
-# generate visual artifacts and connecting the Flashcards tab to generate_flashcards().
-
-
-""" 
-Studient AI 
-================= 
-Flat single-row tab layout (matches the original UI), with the graded 
-interactive Test and Analytics features folded in as regular tabs. 
- 
-Requires: streamlit>=1.45.0, groq, pypdf, python-docx, python-pptx 
 """
- 
-import streamlit as st 
-from pypdf import PdfReader 
-from groq import Groq 
+Studient AI
+=================
+Flat single-row tab layout (matches the original UI), with the graded
+interactive Test and Analytics features folded in as regular tabs.
+
+Requires: streamlit>=1.45.0, groq, pypdf, python-docx, python-pptx
+"""
+
+import streamlit as st
+from pypdf import PdfReader
+from groq import Groq
 
 # Optional readers for Word and PowerPoint uploads. The app remains import-safe
 # when a deployment has not installed these packages yet.
@@ -28,9 +23,9 @@ try:
 except ImportError:
     Presentation = None
 
-import re 
-import json 
-import os 
+import re
+import json
+import os
 import hashlib
 import random
 import time
@@ -38,11 +33,11 @@ import zipfile
 import textwrap
 import base64
 import secrets
-import html as _html_escape_lib  # aliased: this file defines its own html() render helper below 
+import html as _html_escape_lib  # aliased: this file defines its own html() render helper below
 from io import BytesIO, StringIO
 import csv
 from datetime import datetime, date, timedelta
-from collections import Counter, defaultdict 
+from collections import Counter, defaultdict
 
 try:
     from docx import Document
@@ -84,224 +79,224 @@ try:
 except ImportError:
     Fernet = None
     InvalidToken = Exception
- 
-# ============================================================ 
-# PAGE CONFIG 
-# ============================================================ 
- 
-st.set_page_config( 
-    page_title="Studient AI", 
-    page_icon="🧠", 
-    layout="wide", 
-    initial_sidebar_state="expanded", 
-) 
- 
-# ============================================================ 
-# HTML HELPER  (avoids the markdown-code-block bug entirely) 
-# ============================================================ 
- 
-def html(content: str): 
-    if hasattr(st, "html"): 
-        st.html(content) 
-    else: 
-        st.markdown("\n".join(line.lstrip() for line in content.splitlines()), 
-                     unsafe_allow_html=True) 
- 
- 
-# ============================================================ 
-# CSS  -- richer color, left-aligned to dodge markdown code fences 
-# ============================================================ 
- 
-html(""" 
-<style> 
-:root { 
-  --bg: #eef0fb; 
-  --ink: #10142a; 
-  --ink-soft: #454e68; 
-  --ink-faint: #7d84a0; 
-  --accent1: #4f46e5; 
-  --accent2: #7c3aed; 
-  --accent3: #0ea5e9; 
-  --accent4: #db2777; 
-  --accent5: #f59e0b; 
-  --gold: #d6a92c; 
-  --good: #16a34a; 
-  --bad: #dc2626; 
-  --glass-bg: rgba(255,255,255,0.58); 
-  --glass-bg-soft: rgba(255,255,255,0.44); 
-  --glass-border: rgba(255,255,255,0.75); 
-  --glass-shadow: 0 10px 40px rgba(31,25,90,0.14), inset 0 1px 0 rgba(255,255,255,0.65); 
-} 
- 
-/* PREMIUM MESH BACKGROUND */ 
-.stApp { 
-  background: 
-    radial-gradient(circle at 8% 0%, rgba(99,102,241,0.28), transparent 34%), 
-    radial-gradient(circle at 92% 4%, rgba(219,39,119,0.20), transparent 32%), 
-    radial-gradient(circle at 50% 30%, rgba(14,165,233,0.16), transparent 40%), 
-    radial-gradient(circle at 20% 95%, rgba(214,169,44,0.16), transparent 32%), 
-    radial-gradient(circle at 85% 90%, rgba(124,58,237,0.18), transparent 34%), 
-    linear-gradient(160deg, #eef0fb 0%, #eaeefc 45%, #f3ecfb 100%); 
-  background-attachment: fixed; 
-} 
-.main .block-container { max-width: 1450px; padding-top: 1.6rem; padding-bottom: 3rem; } 
- 
-/* HERO -- deep glass with a gold shimmer edge */ 
-.sm-hero { 
-  position: relative; overflow: hidden; 
-  padding: 48px 30px; margin-bottom: 26px; border-radius: 30px; text-align: center; 
-  background: linear-gradient(135deg, rgba(255,255,255,0.75), rgba(238,242,255,0.55) 60%, rgba(253,242,255,0.6)); 
-  border: 1px solid var(--glass-border); 
-  box-shadow: var(--glass-shadow); 
-  backdrop-filter: blur(26px) saturate(170%); 
-  -webkit-backdrop-filter: blur(26px) saturate(170%); 
-} 
-.sm-hero::before { 
-  content: ""; position: absolute; inset: 0; border-radius: 30px; padding: 1px; 
-  background: linear-gradient(120deg, rgba(214,169,44,0.55), rgba(124,58,237,0.25), rgba(14,165,233,0.35)); 
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); 
-  -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; 
-} 
-.sm-hero h1 { margin: 0; font-size: 47px; font-weight: 850; color: var(--ink); letter-spacing: -1.5px; } 
-.sm-hero .grad { 
-  background: linear-gradient(90deg, var(--accent1), var(--accent2), var(--accent4), var(--gold)); 
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; 
-} 
-.sm-hero p.sub { color: var(--ink-soft); font-size: 18px; font-weight: 650; margin-top: 8px; } 
-.sm-hero p.desc { color: var(--ink-faint); max-width: 700px; margin: 10px auto 0; font-size: 15px; } 
- 
-/* GLASS CARD BASE -- reused everywhere below */ 
-.sm-card, .sm-feature, .sm-metric, .sm-question, .sm-answer, .sm-warning, .sm-score-hero { 
-  backdrop-filter: blur(20px) saturate(160%); 
-  -webkit-backdrop-filter: blur(20px) saturate(160%); 
-} 
- 
-.sm-card { 
-  padding: 24px; border-radius: 20px; background: var(--glass-bg); 
-  border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); 
-  margin-bottom: 16px; color: var(--ink); 
-} 
-.sm-card h2, .sm-card h3, .sm-card p, .sm-card li, .sm-card b { color: var(--ink); } 
-.sm-card p { color: var(--ink-soft); } 
- 
-.sm-feature { 
-  padding: 22px; border-radius: 20px; background: var(--glass-bg); 
-  border: 1px solid var(--glass-border); min-height: 155px; 
-  box-shadow: var(--glass-shadow); 
-  transition: transform .2s ease; 
-} 
-.sm-feature:hover { transform: translateY(-3px); } 
-.sm-feature .icon { font-size: 30px; margin-bottom: 8px; } 
-.sm-feature .title { font-weight: 750; color: var(--ink); font-size: 18px; margin-bottom: 6px; } 
-.sm-feature .text { color: var(--ink-soft); font-size: 14px; line-height: 1.55; } 
- 
-/* METRIC CHIPS -- colored icon badge + big number, premium glass finish */ 
-.sm-metric { 
-  padding: 20px 22px; border-radius: 20px; background: var(--glass-bg); 
-  border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); 
-} 
-.sm-metric .row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; } 
-.sm-metric .chip { 
-  width: 28px; height: 28px; border-radius: 9px; display: flex; align-items: center; 
-  justify-content: center; font-size: 14px; font-weight: 800; 
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6); 
-} 
-.sm-metric .label { color: var(--ink-soft); font-weight: 650; font-size: 15px; } 
-.sm-metric .value { color: var(--ink); font-weight: 850; font-size: 32px; } 
-.chip-blue   { background: linear-gradient(135deg, #c7d2fe, #a5b4fc); color: #3730a3; } 
-.chip-cyan   { background: linear-gradient(135deg, #bae6fd, #7dd3fc); color: #075985; } 
-.chip-orange { background: linear-gradient(135deg, #fed7aa, #fdba74); color: #9a3412; } 
- 
-/* QUESTION / ANSWER / WARNING -- glass with colored left rail */ 
-.sm-question { 
-  padding: 20px; margin-bottom: 14px; border-radius: 18px; background: var(--glass-bg-soft); 
-  border: 1px solid rgba(79,70,229,0.18); border-left: 5px solid var(--accent1); 
-  box-shadow: var(--glass-shadow); 
-} 
-.sm-question .label { color: var(--accent1); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; } 
- 
-.sm-answer { 
-  padding: 22px; margin-top: 14px; border-radius: 18px; background: rgba(220,252,231,0.55); 
-  border: 1px solid rgba(34,197,94,0.25); border-left: 5px solid var(--good); 
-  box-shadow: var(--glass-shadow); 
-} 
-.sm-answer .title { color: #14532d; font-weight: 750; font-size: 17px; margin-bottom: 10px; } 
- 
-.sm-warning { 
-  padding: 16px; border-radius: 16px; background: rgba(255,237,213,0.6); 
-  border: 1px solid rgba(249,115,22,0.28); color: #7c2d12; 
-  box-shadow: var(--glass-shadow); 
-} 
- 
-/* QUIZ */ 
-.sm-quiz-progress { color: var(--ink-faint); font-size: 13px; font-weight: 750; text-transform: uppercase; letter-spacing: .5px; } 
-.sm-quiz-topic { 
-  display: inline-block; padding: 4px 13px; border-radius: 999px; font-size: 12px; font-weight: 750; 
-  background: linear-gradient(135deg, rgba(219,39,119,0.16), rgba(124,58,237,0.14)); 
-  color: var(--accent4); margin-bottom: 10px; border: 1px solid rgba(219,39,119,0.2); 
-} 
-.sm-quiz-q { font-size: 20px; font-weight: 750; color: var(--ink); margin-bottom: 6px; } 
-.sm-result-correct { color: var(--good); font-weight: 750; } 
-.sm-result-wrong { color: var(--bad); font-weight: 750; } 
- 
-.sm-score-hero { 
-  text-align: center; padding: 40px; border-radius: 26px; 
-  background: linear-gradient(135deg, rgba(220,252,231,0.55), rgba(238,242,255,0.55), rgba(253,242,255,0.55)); 
-  border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); 
-} 
-.sm-score-hero .big { 
-  font-size: 60px; font-weight: 850; 
-  background: linear-gradient(90deg, var(--accent1), var(--gold)); 
-  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; 
-} 
-.sm-score-hero .pct { font-size: 21px; font-weight: 750; color: var(--accent1); } 
- 
-.sm-tag-weak { background: rgba(220,38,38,0.12); color: var(--bad); padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 750; margin: 3px; display: inline-block; border: 1px solid rgba(220,38,38,0.2); } 
-.sm-tag-strong { background: rgba(22,163,74,0.12); color: var(--good); padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 750; margin: 3px; display: inline-block; border: 1px solid rgba(22,163,74,0.2); } 
- 
-/* BUTTONS -- premium gradient with gold-tinted glow */ 
-.stButton > button { 
-  width: 100%; min-height: 46px; border: none; border-radius: 13px; font-weight: 750; color: white !important; 
-  background: linear-gradient(135deg, var(--accent1) 0%, var(--accent2) 55%, var(--accent4) 100%); 
-  box-shadow: 0 10px 24px rgba(124,58,237,0.30), 0 0 0 1px rgba(255,255,255,0.15) inset; 
-  transition: transform .15s ease, box-shadow .15s ease; 
-} 
-.stButton > button:hover { transform: translateY(-2px); box-shadow: 0 16px 32px rgba(124,58,237,0.38), 0 0 0 1px rgba(214,169,44,0.4) inset; } 
- 
-/* SIDEBAR -- frosted glass panel */ 
-section[data-testid="stSidebar"] { 
-  background: linear-gradient(180deg, rgba(255,255,255,0.75), rgba(238,240,251,0.7)); 
-  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); 
-  border-right: 1px solid rgba(255,255,255,0.5); 
-} 
-[data-testid="stFileUploader"] { 
-  padding: 8px; border-radius: 18px; background: rgba(255,255,255,0.5); 
-  border: 1.5px dashed rgba(124,58,237,0.4); backdrop-filter: blur(10px); 
-} 
-[data-testid="stMetric"] { 
-  padding: 14px; border-radius: 16px; background: rgba(255,255,255,0.6); 
-  border: 1px solid var(--glass-border); backdrop-filter: blur(14px); 
-} 
- 
-/* FLAT SCROLLABLE TAB ROW -- glass pill bar */ 
-.stTabs [data-baseweb="tab-list"] { 
-  gap: 4px; padding: 7px; border-radius: 18px; background: var(--glass-bg); 
-  border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); 
-  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); 
-  overflow-x: auto; flex-wrap: nowrap; 
-} 
-.stTabs [data-baseweb="tab"] { border-radius: 999px; padding: 10px 18px; font-weight: 600; border:none; color: var(--ink-soft); white-space: nowrap; } 
-.stTabs [aria-selected="true"] { 
-  color: white !important; 
+
+# ============================================================
+# PAGE CONFIG
+# ============================================================
+
+st.set_page_config(
+    page_title="Studient AI",
+    page_icon="🧠",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# ============================================================
+# HTML HELPER  (avoids the markdown-code-block bug entirely)
+# ============================================================
+
+def html(content: str):
+    if hasattr(st, "html"):
+        st.html(content)
+    else:
+        st.markdown("\n".join(line.lstrip() for line in content.splitlines()),
+                     unsafe_allow_html=True)
+
+
+# ============================================================
+# CSS  -- richer color, left-aligned to dodge markdown code fences
+# ============================================================
+
+html("""
+<style>
+:root {
+  --bg: #eef0fb;
+  --ink: #10142a;
+  --ink-soft: #454e68;
+  --ink-faint: #7d84a0;
+  --accent1: #4f46e5;
+  --accent2: #7c3aed;
+  --accent3: #0ea5e9;
+  --accent4: #db2777;
+  --accent5: #f59e0b;
+  --gold: #d6a92c;
+  --good: #16a34a;
+  --bad: #dc2626;
+  --glass-bg: rgba(255,255,255,0.58);
+  --glass-bg-soft: rgba(255,255,255,0.44);
+  --glass-border: rgba(255,255,255,0.75);
+  --glass-shadow: 0 10px 40px rgba(31,25,90,0.14), inset 0 1px 0 rgba(255,255,255,0.65);
+}
+
+/* PREMIUM MESH BACKGROUND */
+.stApp {
+  background:
+    radial-gradient(circle at 8% 0%, rgba(99,102,241,0.28), transparent 34%),
+    radial-gradient(circle at 92% 4%, rgba(219,39,119,0.20), transparent 32%),
+    radial-gradient(circle at 50% 30%, rgba(14,165,233,0.16), transparent 40%),
+    radial-gradient(circle at 20% 95%, rgba(214,169,44,0.16), transparent 32%),
+    radial-gradient(circle at 85% 90%, rgba(124,58,237,0.18), transparent 34%),
+    linear-gradient(160deg, #eef0fb 0%, #eaeefc 45%, #f3ecfb 100%);
+  background-attachment: fixed;
+}
+.main .block-container { max-width: 1450px; padding-top: 1.6rem; padding-bottom: 3rem; }
+
+/* HERO -- deep glass with a gold shimmer edge */
+.sm-hero {
+  position: relative; overflow: hidden;
+  padding: 48px 30px; margin-bottom: 26px; border-radius: 30px; text-align: center;
+  background: linear-gradient(135deg, rgba(255,255,255,0.75), rgba(238,242,255,0.55) 60%, rgba(253,242,255,0.6));
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(26px) saturate(170%);
+  -webkit-backdrop-filter: blur(26px) saturate(170%);
+}
+.sm-hero::before {
+  content: ""; position: absolute; inset: 0; border-radius: 30px; padding: 1px;
+  background: linear-gradient(120deg, rgba(214,169,44,0.55), rgba(124,58,237,0.25), rgba(14,165,233,0.35));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none;
+}
+.sm-hero h1 { margin: 0; font-size: 47px; font-weight: 850; color: var(--ink); letter-spacing: -1.5px; }
+.sm-hero .grad {
+  background: linear-gradient(90deg, var(--accent1), var(--accent2), var(--accent4), var(--gold));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.sm-hero p.sub { color: var(--ink-soft); font-size: 18px; font-weight: 650; margin-top: 8px; }
+.sm-hero p.desc { color: var(--ink-faint); max-width: 700px; margin: 10px auto 0; font-size: 15px; }
+
+/* GLASS CARD BASE -- reused everywhere below */
+.sm-card, .sm-feature, .sm-metric, .sm-question, .sm-answer, .sm-warning, .sm-score-hero {
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+.sm-card {
+  padding: 24px; border-radius: 20px; background: var(--glass-bg);
+  border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow);
+  margin-bottom: 16px; color: var(--ink);
+}
+.sm-card h2, .sm-card h3, .sm-card p, .sm-card li, .sm-card b { color: var(--ink); }
+.sm-card p { color: var(--ink-soft); }
+
+.sm-feature {
+  padding: 22px; border-radius: 20px; background: var(--glass-bg);
+  border: 1px solid var(--glass-border); min-height: 155px;
+  box-shadow: var(--glass-shadow);
+  transition: transform .2s ease;
+}
+.sm-feature:hover { transform: translateY(-3px); }
+.sm-feature .icon { font-size: 30px; margin-bottom: 8px; }
+.sm-feature .title { font-weight: 750; color: var(--ink); font-size: 18px; margin-bottom: 6px; }
+.sm-feature .text { color: var(--ink-soft); font-size: 14px; line-height: 1.55; }
+
+/* METRIC CHIPS -- colored icon badge + big number, premium glass finish */
+.sm-metric {
+  padding: 20px 22px; border-radius: 20px; background: var(--glass-bg);
+  border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow);
+}
+.sm-metric .row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.sm-metric .chip {
+  width: 28px; height: 28px; border-radius: 9px; display: flex; align-items: center;
+  justify-content: center; font-size: 14px; font-weight: 800;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6);
+}
+.sm-metric .label { color: var(--ink-soft); font-weight: 650; font-size: 15px; }
+.sm-metric .value { color: var(--ink); font-weight: 850; font-size: 32px; }
+.chip-blue   { background: linear-gradient(135deg, #c7d2fe, #a5b4fc); color: #3730a3; }
+.chip-cyan   { background: linear-gradient(135deg, #bae6fd, #7dd3fc); color: #075985; }
+.chip-orange { background: linear-gradient(135deg, #fed7aa, #fdba74); color: #9a3412; }
+
+/* QUESTION / ANSWER / WARNING -- glass with colored left rail */
+.sm-question {
+  padding: 20px; margin-bottom: 14px; border-radius: 18px; background: var(--glass-bg-soft);
+  border: 1px solid rgba(79,70,229,0.18); border-left: 5px solid var(--accent1);
+  box-shadow: var(--glass-shadow);
+}
+.sm-question .label { color: var(--accent1); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 6px; }
+
+.sm-answer {
+  padding: 22px; margin-top: 14px; border-radius: 18px; background: rgba(220,252,231,0.55);
+  border: 1px solid rgba(34,197,94,0.25); border-left: 5px solid var(--good);
+  box-shadow: var(--glass-shadow);
+}
+.sm-answer .title { color: #14532d; font-weight: 750; font-size: 17px; margin-bottom: 10px; }
+
+.sm-warning {
+  padding: 16px; border-radius: 16px; background: rgba(255,237,213,0.6);
+  border: 1px solid rgba(249,115,22,0.28); color: #7c2d12;
+  box-shadow: var(--glass-shadow);
+}
+
+/* QUIZ */
+.sm-quiz-progress { color: var(--ink-faint); font-size: 13px; font-weight: 750; text-transform: uppercase; letter-spacing: .5px; }
+.sm-quiz-topic {
+  display: inline-block; padding: 4px 13px; border-radius: 999px; font-size: 12px; font-weight: 750;
+  background: linear-gradient(135deg, rgba(219,39,119,0.16), rgba(124,58,237,0.14));
+  color: var(--accent4); margin-bottom: 10px; border: 1px solid rgba(219,39,119,0.2);
+}
+.sm-quiz-q { font-size: 20px; font-weight: 750; color: var(--ink); margin-bottom: 6px; }
+.sm-result-correct { color: var(--good); font-weight: 750; }
+.sm-result-wrong { color: var(--bad); font-weight: 750; }
+
+.sm-score-hero {
+  text-align: center; padding: 40px; border-radius: 26px;
+  background: linear-gradient(135deg, rgba(220,252,231,0.55), rgba(238,242,255,0.55), rgba(253,242,255,0.55));
+  border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow);
+}
+.sm-score-hero .big {
+  font-size: 60px; font-weight: 850;
+  background: linear-gradient(90deg, var(--accent1), var(--gold));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.sm-score-hero .pct { font-size: 21px; font-weight: 750; color: var(--accent1); }
+
+.sm-tag-weak { background: rgba(220,38,38,0.12); color: var(--bad); padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 750; margin: 3px; display: inline-block; border: 1px solid rgba(220,38,38,0.2); }
+.sm-tag-strong { background: rgba(22,163,74,0.12); color: var(--good); padding: 4px 12px; border-radius: 999px; font-size: 13px; font-weight: 750; margin: 3px; display: inline-block; border: 1px solid rgba(22,163,74,0.2); }
+
+/* BUTTONS -- premium gradient with gold-tinted glow */
+.stButton > button {
+  width: 100%; min-height: 46px; border: none; border-radius: 13px; font-weight: 750; color: white !important;
+  background: linear-gradient(135deg, var(--accent1) 0%, var(--accent2) 55%, var(--accent4) 100%);
+  box-shadow: 0 10px 24px rgba(124,58,237,0.30), 0 0 0 1px rgba(255,255,255,0.15) inset;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.stButton > button:hover { transform: translateY(-2px); box-shadow: 0 16px 32px rgba(124,58,237,0.38), 0 0 0 1px rgba(214,169,44,0.4) inset; }
+
+/* SIDEBAR -- frosted glass panel */
+section[data-testid="stSidebar"] {
+  background: linear-gradient(180deg, rgba(255,255,255,0.75), rgba(238,240,251,0.7));
+  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  border-right: 1px solid rgba(255,255,255,0.5);
+}
+[data-testid="stFileUploader"] {
+  padding: 8px; border-radius: 18px; background: rgba(255,255,255,0.5);
+  border: 1.5px dashed rgba(124,58,237,0.4); backdrop-filter: blur(10px);
+}
+[data-testid="stMetric"] {
+  padding: 14px; border-radius: 16px; background: rgba(255,255,255,0.6);
+  border: 1px solid var(--glass-border); backdrop-filter: blur(14px);
+}
+
+/* FLAT SCROLLABLE TAB ROW -- glass pill bar */
+.stTabs [data-baseweb="tab-list"] {
+  gap: 4px; padding: 7px; border-radius: 18px; background: var(--glass-bg);
+  border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  overflow-x: auto; flex-wrap: nowrap;
+}
+.stTabs [data-baseweb="tab"] { border-radius: 999px; padding: 10px 18px; font-weight: 600; border:none; color: var(--ink-soft); white-space: nowrap; }
+.stTabs [aria-selected="true"] {
+  color: white !important;
   background: linear-gradient(135deg, var(--accent1), var(--accent2)) !important;
   border-radius:999px !important;
   padding: 10px 18px !important;
   border: none !important;
   box-shadow: 0 4px 12px rgba(0,0,0,0,12) !important;
   
-} 
- 
-/* FLASHCARDS -- real flip cards, pure CSS (checkbox hack), no JS */ 
+}
+
+/* FLASHCARDS -- real flip cards, pure CSS (checkbox hack), no JS */
 /* FLASHCARDS -- interactive visual flip cards */
 .sm-flip-grid {
   display: grid;
@@ -666,6 +661,7 @@ section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .7rem; }
 .stTabs [data-baseweb="tab"]:hover { color: var(--accent1); background: rgba(79,70,229,.08); }
 .stTabs [aria-selected="true"] { box-shadow: 0 8px 18px rgba(79,70,229,.24) !important; }
 .stTabs [data-baseweb="tab-highlight"] { display: none; }
+.stTabs [data-baseweb="tab-border"] { display: none; }
 .stButton > button, .stDownloadButton > button { min-height: 48px; border-radius: 14px; letter-spacing: .05px; }
 .stButton > button:focus, .stDownloadButton > button:focus { outline: 3px solid rgba(14,165,233,.25); outline-offset: 2px; }
 [data-testid="stFileUploader"] { padding: 10px; border-radius: 20px; box-shadow: 0 8px 24px rgba(31,25,90,.08); }
@@ -748,8 +744,8 @@ label.sm-flip-inner:focus-within { outline:3px solid #0ea5e9; outline-offset:5px
 .sm-audio-copy { color:var(--ink-faint); font-size:12px; margin-bottom:12px; }
 @media (max-width: 900px) { .main .block-container { padding: 1.25rem 1rem 3rem; } .stTabs [data-baseweb="tab-list"] { position: static; } }
 @media (max-width: 640px) { .sm-hero { padding: 40px 18px 34px; border-radius: 24px; } .sm-hero h1 { font-size: 38px; } .sm-hero p.sub { font-size: 16px; } .sm-feature { min-height: 0; } .sm-document-name { font-size: 17px; } }
-</style> 
-""") 
+</style>
+""")
 
 html("""
 <style>
@@ -761,130 +757,19 @@ html("""
 .stApp > header, [data-testid="stHeader"] { backdrop-filter:blur(14px) saturate(135%) !important; -webkit-backdrop-filter:blur(14px) saturate(135%) !important; }
 [data-testid="stToolbar"], [data-testid="stStatusWidget"] { backdrop-filter:blur(10px) !important; -webkit-backdrop-filter:blur(10px) !important; }
 .sm-card, .sm-dashboard, .sm-feature, .sm-metric, .sm-document-bar, .sm-progress-dashboard { will-change:auto !important; }
-
-/* ============================================================
-   TAB NAVIGATION — FINAL FIX v3
-   Strategy (robust, no :not() with complex args, no .main prefix):
-   1) Every tab-list becomes a full-width flex row by default.
-   2) Every tab grows equally (flex:1).
-   3) Nested tab-lists (inside [data-baseweb="tab-panel"]) get
-      overridden back to compact — higher specificity wins.
-   4) Top-level tab-list gets the pill bar styling.
-   ============================================================ */
-
-/* 1) Kill Streamlit's default underline + animated slider */
-[data-baseweb="tab-highlight"],
-[data-baseweb="tab-border"] {
-  display: none !important;
-  visibility: hidden !important;
-  width: 0 !important;
-  height: 0 !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  opacity: 0 !important;
-  position: absolute !important;
-  pointer-events: none !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-/* 2) Every tab-list = full-width flex row */
-div[data-baseweb="tab-list"] {
-  display: flex !important;
-  flex-wrap: nowrap !important;
-  width: 100% !important;
-  align-items: stretch !important;
-  gap: 8px !important;
-  box-sizing: border-box !important;
-  overflow: visible !important;
-}
-
-/* 3) Every tab grows to fill the row equally */
-div[data-baseweb="tab-list"] > button[data-baseweb="tab"],
-div[data-baseweb="tab-list"] > div[data-baseweb="tab"] {
-  flex: 1 1 0% !important;
-  width: auto !important;
-  min-width: 0 !important;
-  max-width: none !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  text-align: center !important;
-  white-space: nowrap !important;
-}
-
-/* 4) Style the top-level pill bar (parent row).
-      This selector also happens to match the nested tab-list, so the
-      nested override below (higher specificity) restores compactness. */
-.stTabs > div[data-baseweb="tab-list"] {
-  background: linear-gradient(110deg, rgba(224,231,255,.94), rgba(255,255,255,.90) 48%, rgba(253,242,255,.94)) !important;
-  border: 1px solid rgba(124,58,237,.18) !important;
-  border-radius: 22px !important;
-  padding: 10px !important;
-  margin: 0 0 14px 0 !important;
-  box-shadow: 0 10px 24px rgba(31,25,90,.12) !important;
-  gap: 10px !important;
-  position: static !important;
-  top: auto !important;
-}
-
-.stTabs > div[data-baseweb="tab-list"] > button[data-baseweb="tab"],
-.stTabs > div[data-baseweb="tab-list"] > div[data-baseweb="tab"] {
-  min-height: 56px !important;
-  padding: 14px 20px !important;
-  border-radius: 16px !important;
-  font-size: 17px !important;
-  font-weight: 750 !important;
-  letter-spacing: .2px !important;
-  color: var(--ink-soft) !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-.stTabs > div[data-baseweb="tab-list"] > button[data-baseweb="tab"][aria-selected="true"],
-.stTabs > div[data-baseweb="tab-list"] > div[data-baseweb="tab"][aria-selected="true"] {
-  color: #fff !important;
-  background: linear-gradient(135deg, var(--accent1), var(--accent2) 55%, var(--accent4)) !important;
-  box-shadow: 0 8px 20px rgba(79,70,229,.28) !important;
-}
-
-/* 5) OVERRIDE for nested (child) tab-lists. Higher specificity than #4
-      so these always win inside a tab-panel. */
-div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] {
-  background: rgba(255,255,255,.42) !important;
-  border: 1px solid rgba(124,58,237,.10) !important;
-  border-radius: 14px !important;
-  padding: 6px !important;
-  margin: 6px 0 20px 0 !important;
-  box-shadow: none !important;
-  gap: 4px !important;
-  justify-content: flex-start !important;
-}
-
-div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] > button[data-baseweb="tab"],
-div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] > div[data-baseweb="tab"] {
-  flex: 0 0 auto !important;
-  width: auto !important;
-  min-width: 0 !important;
-  min-height: 38px !important;
-  padding: 8px 16px !important;
-  border-radius: 10px !important;
-  font-size: 13px !important;
-  font-weight: 650 !important;
-  color: var(--ink-soft) !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] > button[data-baseweb="tab"][aria-selected="true"],
-div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] > div[data-baseweb="tab"][aria-selected="true"] {
-  color: var(--accent1) !important;
-  background: rgba(79,70,229,.12) !important;
-  box-shadow: none !important;
-}
-
+/* NAVIGATION HIERARCHY: parent section tabs stretch edge-to-edge; nested/child tabs stay compact. */
+.main [data-testid="stTabs"]:first-of-type { margin-top:-10px; }
+.sm-parent-nav-heading { display:flex; align-items:center; gap:12px; margin:10px 0 4px; padding:12px 16px; border-radius:16px; color:#fff; background:linear-gradient(110deg,var(--accent1),var(--accent2),var(--accent4)); box-shadow:0 8px 20px rgba(79,70,229,.2); font-size:16px; font-weight:800; letter-spacing:.1px; }
+.sm-parent-nav-heading small { opacity:.82; font-size:11px; font-weight:600; }
+.sm-child-nav-label { display:flex; align-items:center; gap:8px; margin:4px 0 -2px 12px; padding-left:10px; border-left:3px solid var(--accent3); color:var(--ink-faint); font-size:10px; font-weight:850; letter-spacing:.8px; text-transform:uppercase; }
+/* The outer tabs contain the section banners; make them the primary full-width navigation, three equal columns, no divider bar. */
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] { display:flex !important; width:100%; min-height:76px; padding:10px !important; gap:10px !important; position:sticky !important; top:3.15rem; z-index:40; border-radius:0 0 24px 24px; background:linear-gradient(105deg,rgba(224,231,255,.96),rgba(255,255,255,.92) 50%,rgba(253,242,255,.96)) !important; border-bottom:1px solid rgba(124,58,237,.18); box-shadow:0 10px 26px rgba(31,25,90,.14) !important; overflow-x:visible !important; }
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { flex:1 1 0; justify-content:center; text-align:center; min-height:56px; padding:14px 24px !important; border-radius:17px; font-size:18px !important; font-weight:800; color:var(--ink-soft); }
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] [aria-selected="true"] { color:#fff !important; background:linear-gradient(135deg,var(--accent1),var(--accent2),var(--accent4)) !important; box-shadow:0 9px 20px rgba(79,70,229,.28) !important; }
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] [data-baseweb="tab-highlight"],
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] [data-baseweb="tab-border"] { display:none !important; }
+.main [data-testid="stTabs"]:not(:has(.sm-parent-nav-heading)) > div[data-baseweb="tab-list"] { position:relative !important; top:auto !important; min-height:42px; margin:8px 0 20px; padding:5px 8px !important; gap:3px !important; border-radius:15px; background:rgba(255,255,255,.40) !important; box-shadow:none !important; }
+.main [data-testid="stTabs"]:not(:has(.sm-parent-nav-heading)) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { min-height:36px; padding:7px 13px !important; border-radius:10px; font-size:12px !important; font-weight:650; }
 @media (max-width: 700px) {
   .main .block-container { padding: .85rem .7rem 5.5rem !important; }
   .sm-hero { margin: 0 -2px 16px; padding: 32px 18px 28px !important; }
@@ -898,57 +783,34 @@ div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] > div[data-baseweb="t
   .sm-flip-card, .sm-flip-inner { min-height: 270px !important; }
   .stButton > button, .stDownloadButton > button { min-height: 52px !important; font-size: 15px !important; }
   [data-testid="stAudio"] audio { width: 100% !important; min-height: 48px; }
-
-  /* On mobile, only the top-level tab bar moves to a bottom nav.
-     Selector matches top-level tab-lists but is overridden for child ones
-     by the higher-specificity tab-panel rule below it. */
-  .stTabs > div[data-baseweb="tab-list"] {
-    position: fixed !important;
-    left: 0; right: 0; bottom: 0; top: auto !important;
-    z-index: 1000;
-    padding: 6px 4px !important;
-    border-radius: 18px 18px 0 0 !important;
-    background: rgba(255,255,255,.94) !important;
-    backdrop-filter: blur(18px);
-    box-shadow: 0 -8px 24px rgba(31,25,90,.16) !important;
-    overflow-x: auto !important;
-  }
-
-  div[data-baseweb="tab-panel"] div[data-baseweb="tab-list"] {
-    position: static !important;
-    box-shadow: none !important;
-  }
-
-  .stTabs > div[data-baseweb="tab-list"] > button[data-baseweb="tab"],
-  .stTabs > div[data-baseweb="tab-list"] > div[data-baseweb="tab"] {
-    min-height: 46px !important;
-    padding: 8px 10px !important;
-    font-size: 12px !important;
-  }
+  .main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] { position:sticky !important; top:3rem; min-height:64px; padding:7px 5px !important; gap:5px !important; border-radius:0 0 17px 17px; }
+  .main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { min-height:48px; padding:9px 5px !important; font-size:12px !important; border-radius:12px; }
+  .main [data-testid="stTabs"]:not(:has(.sm-parent-nav-heading)) > div[data-baseweb="tab-list"] { position:fixed !important; left:0; right:0; bottom:0; top:auto !important; z-index:1000; padding:6px 4px !important; border-radius:18px 18px 0 0 !important; overflow-x:auto; background:rgba(255,255,255,.92) !important; backdrop-filter:blur(12px); box-shadow:0 -8px 24px rgba(31,25,90,.16) !important; }
+  .stTabs [data-baseweb="tab"] { min-width: 78px; min-height: 46px; padding: 8px 10px !important; font-size: 11px !important; }
 }
 .sm-privacy-note { margin-top: 8px; padding: 10px 12px; border-radius: 12px; color: var(--ink-faint); background: rgba(79,70,229,.06); border: 1px solid rgba(79,70,229,.12); font-size: 11px; line-height: 1.45; }
 </style>
 """)
- 
-# ============================================================ 
-# GROQ CLIENT 
-# ============================================================ 
- 
-MODEL_CANDIDATES = ["openai/gpt-oss-120b"] 
- 
-def get_groq_client(): 
-    api_key = os.environ.get("GROQ_API_KEY") 
-    if not api_key: 
-        try: 
-            api_key = st.secrets.get("GROQ_API_KEY") 
-        except Exception: 
-            api_key = None 
-    if not api_key: 
-        st.error("Groq API key is not configured. Set GROQ_API_KEY as an env var or in Streamlit Secrets.") 
-        return None 
-    return Groq(api_key=api_key) 
- 
- 
+
+# ============================================================
+# GROQ CLIENT
+# ============================================================
+
+MODEL_CANDIDATES = ["openai/gpt-oss-120b"]
+
+def get_groq_client():
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        try:
+            api_key = st.secrets.get("GROQ_API_KEY")
+        except Exception:
+            api_key = None
+    if not api_key:
+        st.error("Groq API key is not configured. Set GROQ_API_KEY as an env var or in Streamlit Secrets.")
+        return None
+    return Groq(api_key=api_key)
+
+
 @st.cache_data(ttl=3600, max_entries=128, show_spinner=False)
 def cached_groq_response(prompt, system_message, max_tokens):
     client = get_groq_client()
@@ -967,29 +829,29 @@ def cached_groq_response(prompt, system_message, max_tokens):
     return ""
 
 
-def ask_groq(prompt, system_message=None, max_tokens=2000): 
+def ask_groq(prompt, system_message=None, max_tokens=2000):
     """Cached AI request wrapper to avoid duplicate generation on Streamlit reruns."""
     cached = cached_groq_response(prompt, system_message or "", max_tokens)
     if cached:
         return cached
-    client = get_groq_client() 
-    if client is None: 
-        return "" 
-    messages = [] 
-    if system_message: 
-        messages.append({"role": "system", "content": system_message}) 
-    messages.append({"role": "user", "content": prompt}) 
-    last_error = None 
-    for model in MODEL_CANDIDATES: 
-        try: 
-            response = client.chat.completions.create( 
-                model=model, messages=messages, temperature=0.2, max_tokens=max_tokens 
-            ) 
-            return response.choices[0].message.content 
-        except Exception as e: 
-            last_error = e 
-            continue 
-    st.error(f"Groq API error: {last_error}") 
+    client = get_groq_client()
+    if client is None:
+        return ""
+    messages = []
+    if system_message:
+        messages.append({"role": "system", "content": system_message})
+    messages.append({"role": "user", "content": prompt})
+    last_error = None
+    for model in MODEL_CANDIDATES:
+        try:
+            response = client.chat.completions.create(
+                model=model, messages=messages, temperature=0.2, max_tokens=max_tokens
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            last_error = e
+            continue
+    st.error(f"Groq API error: {last_error}")
     return ""
 
 
@@ -1028,8 +890,8 @@ def prepare_speech_text(text, language_name):
     prompt = f"Translate the study summary below into natural, clear {language_name} for spoken audio. Preserve all factual meaning. Return only the translated study content without an introduction, headings, markdown, bullets, symbols, or commentary.\n\nSUMMARY:\n{cleaned[:12000]}"
     translated = ask_groq(prompt, max_tokens=3500)
     return clean_speech_text(translated) if translated else cleaned
- 
- 
+
+
 # ============================================================
 # DOCUMENT EXTRACTION / CLEANING / CHUNKING
 # ============================================================
@@ -1133,27 +995,27 @@ def extract_document_text(uploaded_file):
         st.error("Unsupported document format. Please upload a PDF, Word document, or PowerPoint presentation.")
         return "", extension
     return extractor(uploaded_file), extension
-def clean_text(text): 
-    text = text.replace("\x00", " ") 
-    text = re.sub(r"[ \t]+", " ", text) 
-    text = re.sub(r"\n{3,}", "\n\n", text) 
-    return text.strip() 
- 
- 
-def chunk_text(text, chunk_size=7000): 
-    words = text.split() 
-    chunks, current, length = [], [], 0 
-    for w in words: 
-        current.append(w) 
-        length += len(w) + 1 
-        if length >= chunk_size: 
-            chunks.append(" ".join(current)) 
-            current, length = [], 0 
-    if current: 
-        chunks.append(" ".join(current)) 
-    return chunks 
- 
- 
+def clean_text(text):
+    text = text.replace("\x00", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def chunk_text(text, chunk_size=7000):
+    words = text.split()
+    chunks, current, length = [], [], 0
+    for w in words:
+        current.append(w)
+        length += len(w) + 1
+        if length >= chunk_size:
+            chunks.append(" ".join(current))
+            current, length = [], 0
+    if current:
+        chunks.append(" ".join(current))
+    return chunks
+
+
 @st.cache_data(max_entries=128, show_spinner=False)
 def get_relevant_chunks(text, query, max_chunks=8, max_context_chars=12000):
     """
@@ -1225,41 +1087,41 @@ def get_relevant_chunks(text, query, max_chunks=8, max_context_chars=12000):
     selected.sort(key=lambda x: x[0])
 
     return "\n\n".join(chunk for _, chunk in selected)
- 
- 
-# ============================================================ 
-# JSON QUIZ GENERATION (structured, not regex-parsed) 
-# ============================================================ 
- 
-QUIZ_SYSTEM_MSG = ( 
-    "You are a quiz generation engine. Respond with ONLY valid JSON — " 
-    "no markdown, no code fences, no commentary. The JSON must be a list of objects " 
-    'with keys: "question" (string), "options" (object with keys A,B,C,D), ' 
-    '"correct" (one of "A","B","C","D"), "explanation" (string), ' 
-    '"topic" (short 2-4 word label). Base everything strictly on the material given.' 
-) 
- 
-def _strip_json_fences(raw): 
-    raw = raw.strip() 
-    raw = re.sub(r"^```(json)?", "", raw).strip() 
-    raw = re.sub(r"```$", "", raw).strip() 
-    return raw 
- 
- 
+
+
+# ============================================================
+# JSON QUIZ GENERATION (structured, not regex-parsed)
+# ============================================================
+
+QUIZ_SYSTEM_MSG = (
+    "You are a quiz generation engine. Respond with ONLY valid JSON — "
+    "no markdown, no code fences, no commentary. The JSON must be a list of objects "
+    'with keys: "question" (string), "options" (object with keys A,B,C,D), '
+    '"correct" (one of "A","B","C","D"), "explanation" (string), '
+    '"topic" (short 2-4 word label). Base everything strictly on the material given.'
+)
+
+def _strip_json_fences(raw):
+    raw = raw.strip()
+    raw = re.sub(r"^```(json)?", "", raw).strip()
+    raw = re.sub(r"```$", "", raw).strip()
+    return raw
+
+
 def generate_quiz_questions(text, count, difficulty, category="Mixed"):
     category_focus = {"Mixed": "important exam concepts facts definitions processes", "Definitions": "definitions terms meanings", "Processes": "processes mechanisms steps cause effect", "Comparisons": "comparisons differences similarities", "Facts": "important facts values examples", "Exam-focused": "high priority exam concepts likely questions"}.get(category, "important concepts")
-    context = get_relevant_chunks(text, category_focus, max_chunks=10) 
+    context = get_relevant_chunks(text, category_focus, max_chunks=10)
     prompt = f"""Create exactly {count} multiple-choice questions at {difficulty} difficulty in the {category} category
-from the study material below. Return ONLY the JSON array described in the system message. 
- 
-STUDY MATERIAL: 
-{context} 
-""" 
-    raw = ask_groq(prompt, system_message=QUIZ_SYSTEM_MSG, max_tokens=4000) 
-    if not raw: 
-        return None 
-    try: 
-        data = json.loads(_strip_json_fences(raw)) 
+from the study material below. Return ONLY the JSON array described in the system message.
+
+STUDY MATERIAL:
+{context}
+"""
+    raw = ask_groq(prompt, system_message=QUIZ_SYSTEM_MSG, max_tokens=4000)
+    if not raw:
+        return None
+    try:
+        data = json.loads(_strip_json_fences(raw))
         cleaned = [q for q in data if all(k in q for k in ("question", "options", "correct", "explanation", "topic"))
                    and all(k in q["options"] for k in ("A", "B", "C", "D"))]
         for q in cleaned:
@@ -1268,21 +1130,21 @@ STUDY MATERIAL:
             random.shuffle(options)
             q["options"] = dict(zip(("A", "B", "C", "D"), options))
             q["correct"] = next(letter for letter, value in q["options"].items() if value == correct_text)
-        return cleaned or None 
-    except Exception as e: 
-        st.error(f"Couldn't parse the generated quiz as JSON: {e}") 
-        with st.expander("Raw model output (for debugging)"): 
-            st.code(raw) 
-        return None 
- 
- 
-# ============================================================ 
-# FLASHCARD GENERATION -- separate from MCQs on purpose. 
-# MCQ "correct answer" text is deliberately short (it's one of 
-# four options); a flashcard back needs a real explanation, so 
-# this uses its own prompt/schema instead of reusing MCQ output. 
-# ============================================================ 
- 
+        return cleaned or None
+    except Exception as e:
+        st.error(f"Couldn't parse the generated quiz as JSON: {e}")
+        with st.expander("Raw model output (for debugging)"):
+            st.code(raw)
+        return None
+
+
+# ============================================================
+# FLASHCARD GENERATION -- separate from MCQs on purpose.
+# MCQ "correct answer" text is deliberately short (it's one of
+# four options); a flashcard back needs a real explanation, so
+# this uses its own prompt/schema instead of reusing MCQ output.
+# ============================================================
+
 # ============================================================
 # FLASHCARD GENERATION -- visual artifacts + flip cards
 # ============================================================
@@ -1605,8 +1467,8 @@ def render_flashcards(cards):
     pieces.append("</div>")
 
     html("".join(pieces))
- 
- 
+
+
 
 # ============================================================
 # INTERACTIVE MIND MAP GENERATION
@@ -1705,11 +1567,11 @@ def render_mind_map(mind_map):
     parts.append('</ul></div>')
     html("".join(parts))
 
-# ============================================================ 
-# SCORE HISTORY (local JSON — resets on Streamlit Cloud restart) 
-# ============================================================ 
- 
-HISTORY_FILE = "study_history.json" 
+# ============================================================
+# SCORE HISTORY (local JSON — resets on Streamlit Cloud restart)
+# ============================================================
+
+HISTORY_FILE = "study_history.json"
 SUMMARY_HISTORY_FILE = "summary_history.json"
 REVIEW_STATE_FILE = "flashcard_review_state.json"
 
@@ -1799,25 +1661,25 @@ def apply_retention_policy(days):
     summaries = [item for item in load_summary_history() if item.get("timestamp", "") >= cutoff.isoformat()]
     write_private_json(HISTORY_FILE, history)
     write_private_json(SUMMARY_HISTORY_FILE, summaries)
- 
-def load_history(): 
+
+def load_history():
     return read_private_json(HISTORY_FILE, [])
- 
- 
-def save_attempt(document_name, score, total, topic_results): 
+
+
+def save_attempt(document_name, score, total, topic_results):
     if st.session_state.get("privacy_mode"):
         return []
-    history = load_history() 
-    history.append({ 
-        "timestamp": datetime.now().isoformat(timespec="seconds"), 
-        "document": document_name, "score": score, "total": total, "topics": topic_results, 
+    history = load_history()
+    history.append({
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "document": document_name, "score": score, "total": total, "topics": topic_results,
         "duration_minutes": round(max(0, (time.time() - (st.session_state.get("test_started_at") or time.time())) / 60), 1),
-    }) 
-    try: 
+    })
+    try:
         write_private_json(HISTORY_FILE, history)
-    except Exception as e: 
-        st.warning(f"Couldn't save this attempt to history: {e}") 
-    return history 
+    except Exception as e:
+        st.warning(f"Couldn't save this attempt to history: {e}")
+    return history
 
 
 def make_pdf_bytes(title, sections):
@@ -2125,15 +1987,15 @@ def render_dashboard():
       <div class="sm-dashboard-insights"><span>Average score <b>{data["average"]}%</b></span><span>Trend <b class="{'positive' if data['improvement'] >= 0 else 'negative'}">{data["improvement"]:+d}%</b></span><span>Study sessions <b>{data["sessions"]}</b></span><span>Due today <b>{data["due_today"]}</b></span><span>Focus next <b>{_html_escape_lib.escape(data["weakest"])}</b></span></div>
       <div class="sm-dashboard-columns"><div><div class="sm-dashboard-section-title">Recent documents</div>{doc_rows}</div><div><div class="sm-dashboard-section-title">Recently generated summaries</div>{summary_rows}</div></div>
     </section>''')
- 
- 
-# ============================================================ 
-# SESSION STATE 
-# ============================================================ 
- 
-defaults = { 
-    "pdf_text": "", "document_name": "", "document_type": "", "document_signature": "", 
-    "quiz_questions": None, "quiz_index": 0, "quiz_answers": [], 
+
+
+# ============================================================
+# SESSION STATE
+# ============================================================
+
+defaults = {
+    "pdf_text": "", "document_name": "", "document_type": "", "document_signature": "",
+    "quiz_questions": None, "quiz_index": 0, "quiz_answers": [],
     "quiz_locked": False, "quiz_finished": False, "mind_map": None,
     "summary_text": "", "summary_audio": None,
     "theme_mode": "Light", "reduced_motion": False,
@@ -2152,10 +2014,10 @@ defaults = {
     "study_plan": None, "tutor_messages": [], "tutor_level": "Intermediate",
     "generated_material": None, "generated_material_type": "", "sample_paper": None,
     "privacy_mode": False, "retention_days": 0,
-} 
-for k, v in defaults.items(): 
-    if k not in st.session_state: 
-        st.session_state[k] = v 
+}
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 if st.session_state.theme_mode == "Dark":
     html("""
@@ -2180,45 +2042,45 @@ font_scale_values = {"Small": ".92", "Default": "1", "Large": "1.10", "Extra lar
 html(f'<style>:root {{ --sm-font-scale:{font_scale_values.get(st.session_state.font_scale, "1")}; }} .stApp {{ font-size:calc(1rem * var(--sm-font-scale)); }} .sm-card, .sm-dashboard, .sm-feature, .sm-document-bar {{ font-size:calc(1em * var(--sm-font-scale)); }}</style>')
 if st.session_state.reduced_motion:
     html("<style>* { animation-duration:0.001ms !important; transition-duration:0.001ms !important; }</style>")
- 
- 
-def reset_quiz(): 
-    st.session_state.quiz_questions = None 
-    st.session_state.quiz_index = 0 
-    st.session_state.quiz_answers = [] 
-    st.session_state.quiz_locked = False 
-    st.session_state.quiz_finished = False 
+
+
+def reset_quiz():
+    st.session_state.quiz_questions = None
+    st.session_state.quiz_index = 0
+    st.session_state.quiz_answers = []
+    st.session_state.quiz_locked = False
+    st.session_state.quiz_finished = False
     st.session_state.test_started_at = None
     st.session_state.test_timed_out = False
- 
- 
-def metric_card(chip_class, icon, label, value): 
-    html(f""" 
-    <div class="sm-metric"> 
-      <div class="row"><span class="chip {chip_class}">{icon}</span><span class="label">{label}</span></div> 
-      <div class="value">{value}</div> 
-    </div> 
-    """) 
- 
- 
-# ============================================================ 
-# HERO 
-# ============================================================ 
- 
-html(""" 
+
+
+def metric_card(chip_class, icon, label, value):
+    html(f"""
+    <div class="sm-metric">
+      <div class="row"><span class="chip {chip_class}">{icon}</span><span class="label">{label}</span></div>
+      <div class="value">{value}</div>
+    </div>
+    """)
+
+
+# ============================================================
+# HERO
+# ============================================================
+
+html("""
 <div class="sm-hero">
   <div class="eyebrow">✦ Your intelligent study companion</div>
   <div class="hero-icon">🧠</div>
   <h1><span class="grad">Studient</span> AI</h1>
   <p class="sub">Your Personal AI-Powered Study Assistant</p>
   <p class="desc">Turn your notes, documents, and presentations into clear, exam-ready learning — then practice, reflect, and improve with confidence.</p>
-</div> 
-""") 
- 
-# ============================================================ 
-# SIDEBAR 
-# ============================================================ 
- 
+</div>
+""")
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
 with st.sidebar:
     html("""
     <div class="sm-brand">
@@ -2296,75 +2158,75 @@ with st.sidebar:
                     st.write(f"**{name}** · {SUPPORTED_LABELS.get(data['type'], data['type'].upper())} · {len(data['text'].split()):,} words")
 
     st.divider()
-    st.markdown("### ⚙️ Study Settings") 
-    question_count = st.slider("Number of questions", 3, 15, 5) 
-    difficulty = st.selectbox("Difficulty", ["Easy", "Medium", "Hard", "University Exam"]) 
+    st.markdown("### ⚙️ Study Settings")
+    question_count = st.slider("Number of questions", 3, 15, 5)
+    difficulty = st.selectbox("Difficulty", ["Easy", "Medium", "Hard", "University Exam"])
     st.markdown("#### 🧪 Practice test options")
     test_category = st.selectbox("Test category", ["Mixed", "Definitions", "Processes", "Comparisons", "Facts", "Exam-focused"], key="test_category")
     timed_mode = st.checkbox("Timed mode", key="timed_mode")
     if timed_mode:
         st.selectbox("Time limit", [5, 10, 15, 20, 30], key="test_time_limit", format_func=lambda value: f"{value} minutes")
     st.checkbox("Negative marking", key="negative_marking", help="Wrong answers reduce the final score by 0.25 points.")
- 
-    st.divider() 
-    if st.button("🔄 Reset Test"): 
-        reset_quiz() 
-        st.rerun() 
- 
-    st.divider() 
-    html(""" 
-    <div class="sm-card"> 
-      <b>💡 Study Tip</b><br><br> 
-      For best results, upload clear lecture notes, Word documents, or presentation slides. 
-    </div> 
-    """) 
- 
-# ============================================================ 
-# WELCOME SCREEN 
-# ============================================================ 
- 
-if not st.session_state.pdf_text: 
-    html(""" 
-    <div class="sm-card"> 
-      <h2><span class="grad">👋 Welcome to Studient AI</span></h2> 
-      <p>Upload your study material from the sidebar and transform it into personalized exam preparation.</p> 
-    </div> 
-    """) 
-    c1, c2, c3 = st.columns(3) 
-    for col, icon, title, text in [ 
-        (c1, "📚", "Learn", "Generate summaries, explanations, definitions and key concepts."), 
-        (c2, "📝", "Practice", "Generate MCQs, short questions, long questions and flashcards."), 
-        (c3, "🎯", "Prepare", "Analyze difficulty and test yourself with a graded exam-style test."), 
-    ]: 
-        with col: 
-            html(f'<div class="sm-feature"><div class="icon">{icon}</div><div class="title">{title}</div><div class="text">{text}</div></div>') 
+
+    st.divider()
+    if st.button("🔄 Reset Test"):
+        reset_quiz()
+        st.rerun()
+
+    st.divider()
+    html("""
+    <div class="sm-card">
+      <b>💡 Study Tip</b><br><br>
+      For best results, upload clear lecture notes, Word documents, or presentation slides.
+    </div>
+    """)
+
+# ============================================================
+# WELCOME SCREEN
+# ============================================================
+
+if not st.session_state.pdf_text:
+    html("""
+    <div class="sm-card">
+      <h2><span class="grad">👋 Welcome to Studient AI</span></h2>
+      <p>Upload your study material from the sidebar and transform it into personalized exam preparation.</p>
+    </div>
+    """)
+    c1, c2, c3 = st.columns(3)
+    for col, icon, title, text in [
+        (c1, "📚", "Learn", "Generate summaries, explanations, definitions and key concepts."),
+        (c2, "📝", "Practice", "Generate MCQs, short questions, long questions and flashcards."),
+        (c3, "🎯", "Prepare", "Analyze difficulty and test yourself with a graded exam-style test."),
+    ]:
+        with col:
+            html(f'<div class="sm-feature"><div class="icon">{icon}</div><div class="title">{title}</div><div class="text">{text}</div></div>')
     render_dashboard()
-    html('<div class="sm-warning"><b>📌 OCR supported</b><br><br>Scanned PDFs are automatically processed with OCR when selectable text is not available.</div>') 
-    st.stop() 
- 
-# ============================================================ 
-# DOCUMENT HEADER  (Words / Characters / Difficulty — restored) 
-# ============================================================ 
- 
-html(f'<div class="sm-document-bar"><div class="sm-document-name"><span>📄 {st.session_state.document_name}</span><span style="font-size:11px; padding:5px 9px; border-radius:999px; background:rgba(79,70,229,.09); color:var(--accent1); vertical-align:middle;">{SUPPORTED_LABELS.get(st.session_state.document_type, "DOCUMENT")}</span></div><div class="sm-document-meta">Ready for active learning</div></div>') 
+    html('<div class="sm-warning"><b>📌 OCR supported</b><br><br>Scanned PDFs are automatically processed with OCR when selectable text is not available.</div>')
+    st.stop()
+
+# ============================================================
+# DOCUMENT HEADER  (Words / Characters / Difficulty — restored)
+# ============================================================
+
+html(f'<div class="sm-document-bar"><div class="sm-document-name"><span>📄 {st.session_state.document_name}</span><span style="font-size:11px; padding:5px 9px; border-radius:999px; background:rgba(79,70,229,.09); color:var(--accent1); vertical-align:middle;">{SUPPORTED_LABELS.get(st.session_state.document_type, "DOCUMENT")}</span></div><div class="sm-document-meta">Ready for active learning</div></div>')
 
 with st.expander("📄 Preview extracted document text"):
     preview_text = st.session_state.pdf_text[:5000]
     st.text_area("Extracted content preview", preview_text, height=220, label_visibility="collapsed")
     st.download_button("⬇️ Download extracted text", st.session_state.pdf_text, file_name=f"{st.session_state.document_name.rsplit('.', 1)[0]}.txt", mime="text/plain", key="download_extracted_text")
- 
-m1, m2, m3 = st.columns(3) 
-with m1: 
-    metric_card("chip-blue", "📖", "Words", f"{len(st.session_state.pdf_text.split()):,}") 
-with m2: 
-    metric_card("chip-cyan", "🔤", "Characters", f"{len(st.session_state.pdf_text):,}") 
-with m3: 
-    metric_card("chip-orange", "🎯", "Difficulty", difficulty) 
+
+m1, m2, m3 = st.columns(3)
+with m1:
+    metric_card("chip-blue", "📖", "Words", f"{len(st.session_state.pdf_text.split()):,}")
+with m2:
+    metric_card("chip-cyan", "🔤", "Characters", f"{len(st.session_state.pdf_text):,}")
+with m3:
+    metric_card("chip-orange", "🎯", "Difficulty", difficulty)
 
 render_dashboard()
- 
-st.markdown("<br>", unsafe_allow_html=True) 
- 
+
+st.markdown("<br>", unsafe_allow_html=True)
+
 # ============================================================
 # ORGANIZED THREE-SECTION NAVIGATION
 # ============================================================
@@ -2372,39 +2234,39 @@ st.markdown("<br>", unsafe_allow_html=True)
 section_tabs = st.tabs(["📚 Study Desk", "🎨 AI Studio", "🧠 AI Learning"])
 tabs = [None] * 16
 with section_tabs[0]:
-    st.caption("Read, ask, and understand your uploaded workspace.")
+    html('<div class="sm-parent-nav-heading">📚 Study Desk <small>Read, ask, and understand your workspace</small></div>')
     desk_tabs = st.tabs(["📚 Summary", "🔍 Key Concepts", "💬 Ask Workspace"])
     tabs[0], tabs[6], tabs[15] = desk_tabs[0], desk_tabs[1], desk_tabs[2]
 with section_tabs[1]:
-    st.caption("Create active revision materials, practice, and track progress.")
+    html('<div class="sm-parent-nav-heading">🎨 AI Studio <small>Create, practice, and track progress</small></div>')
     studio_tabs = st.tabs(["🎴 Flashcards", "❓ MCQs", "📝 Questions", "📖 Long Questions", "🎯 Short Questions", "📊 Difficulty", "🧪 Practice Test", "📈 Analytics", "🧠 Mind Map"])
     tabs[3], tabs[2], tabs[1], tabs[4], tabs[5], tabs[7], tabs[8], tabs[9], tabs[10] = studio_tabs
 with section_tabs[2]:
-    st.caption("Use AI to plan, tutor, and generate exam-ready materials.")
+    html('<div class="sm-parent-nav-heading">🧠 AI Learning <small>Plan, tutor, and generate exam-ready materials</small></div>')
     learning_tabs = st.tabs(["🗓️ Study Plan", "🧑‍🏫 AI Tutor", "🧰 Study Materials", "📝 Sample Paper"])
     tabs[11], tabs[12], tabs[13], tabs[14] = learning_tabs
- 
-# ---------------- SUMMARY ---------------- 
-with tabs[0]: 
-    st.header("📚 Chapter Summary") 
-    st.caption("Generate an organized, exam-focused summary.") 
-    if st.button("✨ Generate Summary", key="gen_summary"): 
-        context = get_relevant_chunks(st.session_state.pdf_text, "overview main ideas important concepts", max_chunks=10) 
-        prompt = f"""Create a clear, organized, exam-focused summary of this material. 
-Structure it with: 1. Chapter Overview 2. Main Concepts 3. Important Definitions 
-4. Important Facts 5. Processes / Mechanisms 6. Exam-Focused Points 7. Quick Revision. 
- 
-STUDY MATERIAL: 
-{context}""" 
-        with st.spinner("Studient AI is analyzing your material..."): 
-            result = ask_groq(prompt, max_tokens=2600) 
-        if result: 
+
+# ---------------- SUMMARY ----------------
+with tabs[0]:
+    st.header("📚 Chapter Summary")
+    st.caption("Generate an organized, exam-focused summary.")
+    if st.button("✨ Generate Summary", key="gen_summary"):
+        context = get_relevant_chunks(st.session_state.pdf_text, "overview main ideas important concepts", max_chunks=10)
+        prompt = f"""Create a clear, organized, exam-focused summary of this material.
+Structure it with: 1. Chapter Overview 2. Main Concepts 3. Important Definitions
+4. Important Facts 5. Processes / Mechanisms 6. Exam-Focused Points 7. Quick Revision.
+
+STUDY MATERIAL:
+{context}"""
+        with st.spinner("Studient AI is analyzing your material..."):
+            result = ask_groq(prompt, max_tokens=2600)
+        if result:
             st.session_state.summary_text = result
             st.session_state.summary_audio = None
             save_summary(st.session_state.document_name, result)
             st.rerun()
-            html(f'<div class="sm-answer"><div class="title">📚 AI Study Summary</div></div>') 
-            st.markdown(result) 
+            html(f'<div class="sm-answer"><div class="title">📚 AI Study Summary</div></div>')
+            st.markdown(result)
             st.download_button("⬇️ Download summary as Markdown", result, file_name="studient-summary.md", mime="text/markdown", key="download_summary_markdown")
 
     if st.session_state.get("summary_text"):
@@ -2430,50 +2292,50 @@ STUDY MATERIAL:
             st.download_button("⬇️ Download audio summary", st.session_state.summary_audio, file_name="studient-summary.mp3", mime="audio/mpeg", key="download_summary_audio")
         study_pack = make_study_pack()
         st.download_button("📦 Download complete study pack", study_pack, file_name="studient-study-pack.zip", mime="application/zip", key="download_study_pack")
- 
-# ---------------- IMPORTANT QUESTIONS ---------------- 
-with tabs[1]: 
-    st.header("📝 Important Exam Questions") 
-    st.caption("Generate questions based strictly on your uploaded material.") 
-    if st.button("✨ Generate Important Questions", key="gen_iq"): 
-        context = get_relevant_chunks(st.session_state.pdf_text, "important concepts topics definitions processes exam", max_chunks=8) 
-        prompt = f"""Create {question_count} important university exam questions from the material below. 
-Difficulty: {difficulty}. Prioritize core concepts, processes, definitions, comparisons, cause and effect. 
-Return numbered questions only. 
- 
-STUDY MATERIAL: 
-{context}""" 
-        with st.spinner("Finding the most important questions..."): 
-            result = ask_groq(prompt, max_tokens=1800) 
-        if result: 
-            lines = [l.strip() for l in result.split("\n") if l.strip()] 
+
+# ---------------- IMPORTANT QUESTIONS ----------------
+with tabs[1]:
+    st.header("📝 Important Exam Questions")
+    st.caption("Generate questions based strictly on your uploaded material.")
+    if st.button("✨ Generate Important Questions", key="gen_iq"):
+        context = get_relevant_chunks(st.session_state.pdf_text, "important concepts topics definitions processes exam", max_chunks=8)
+        prompt = f"""Create {question_count} important university exam questions from the material below.
+Difficulty: {difficulty}. Prioritize core concepts, processes, definitions, comparisons, cause and effect.
+Return numbered questions only.
+
+STUDY MATERIAL:
+{context}"""
+        with st.spinner("Finding the most important questions..."):
+            result = ask_groq(prompt, max_tokens=1800)
+        if result:
+            lines = [l.strip() for l in result.split("\n") if l.strip()]
             st.session_state.important_questions = lines[:question_count]
-            for i, q in enumerate(lines[:question_count]): 
-                html(f'<div class="sm-question"><div class="label">Question {i+1}</div></div>') 
-                st.write(q) 
+            for i, q in enumerate(lines[:question_count]):
+                html(f'<div class="sm-question"><div class="label">Question {i+1}</div></div>')
+                st.write(q)
             questions_docx = make_questions_docx(st.session_state.important_questions, "Important Exam Questions")
             if questions_docx:
                 st.download_button("⬇️ Export questions as DOCX", questions_docx, file_name="studient-important-questions.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="export_important_docx")
- 
-# ---------------- MCQS (interactive JSON, browsable) ---------------- 
-with tabs[2]: 
-    st.header("❓ Multiple Choice Questions") 
-    st.caption("Generate exam-style MCQs with answers and explanations.") 
-    if st.button("✨ Generate MCQs", key="gen_mcq"): 
-        with st.spinner("Generating your MCQs..."): 
-            questions = generate_quiz_questions(st.session_state.pdf_text, question_count, difficulty) 
-        if questions: 
+
+# ---------------- MCQS (interactive JSON, browsable) ----------------
+with tabs[2]:
+    st.header("❓ Multiple Choice Questions")
+    st.caption("Generate exam-style MCQs with answers and explanations.")
+    if st.button("✨ Generate MCQs", key="gen_mcq"):
+        with st.spinner("Generating your MCQs..."):
+            questions = generate_quiz_questions(st.session_state.pdf_text, question_count, difficulty)
+        if questions:
             st.session_state.mcq_questions = questions
-            for i, q in enumerate(questions, 1): 
-                with st.expander(f"Q{i}. {q['question']}"): 
-                    for letter, opt in q["options"].items(): 
-                        st.write(f"**{letter})** {opt}") 
-                    st.success(f"Correct Answer: {q['correct']} — {q['explanation']}") 
+            for i, q in enumerate(questions, 1):
+                with st.expander(f"Q{i}. {q['question']}"):
+                    for letter, opt in q["options"].items():
+                        st.write(f"**{letter})** {opt}")
+                    st.success(f"Correct Answer: {q['correct']} — {q['explanation']}")
             mcq_docx = make_questions_docx(questions, "Studient AI MCQs")
             if mcq_docx:
                 st.download_button("⬇️ Export MCQs as DOCX", mcq_docx, file_name="studient-mcqs.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="export_mcq_docx")
- 
-# ---------------- FLASHCARDS ---------------- 
+
+# ---------------- FLASHCARDS ----------------
 # ---------------- FLASHCARDS ----------------
 with tabs[3]:
     st.header("🎴 Visual Flashcards")
@@ -2504,7 +2366,7 @@ with tabs[3]:
             st.warning(
                 "I couldn't create the flashcards. "
                 "Please try generating them again."
-            ) 
+            )
 
     if st.session_state.get("flashcards"):
         flashcards = st.session_state.flashcards
@@ -2534,91 +2396,91 @@ with tabs[3]:
         flashcards_pdf = make_flashcards_pdf(flashcards)
         if flashcards_pdf:
             st.download_button("⬇️ Export flashcards as PDF", flashcards_pdf, file_name="studient-flashcards.pdf", mime="application/pdf", key="export_flashcards_pdf")
- 
-# ---------------- LONG QUESTIONS ---------------- 
-with tabs[4]: 
-    st.header("📖 Long Questions") 
-    st.caption("Prepare detailed university examination questions.") 
-    if st.button("✨ Generate Long Questions", key="gen_long"): 
-        context = get_relevant_chunks(st.session_state.pdf_text, "process explain discuss compare analyze describe", max_chunks=8) 
-        prompt = f"""Create {question_count} long-answer university examination questions. 
-Difficulty: {difficulty}. Focus on Explain / Discuss / Analyze / Compare / Describe processes / Cause and effect. 
-Return only numbered questions. 
- 
-STUDY MATERIAL: 
-{context}""" 
-        with st.spinner("Generating long questions..."): 
-            result = ask_groq(prompt, max_tokens=1800) 
-        if result: 
-            html('<div class="sm-card"></div>') 
-            st.markdown(result) 
+
+# ---------------- LONG QUESTIONS ----------------
+with tabs[4]:
+    st.header("📖 Long Questions")
+    st.caption("Prepare detailed university examination questions.")
+    if st.button("✨ Generate Long Questions", key="gen_long"):
+        context = get_relevant_chunks(st.session_state.pdf_text, "process explain discuss compare analyze describe", max_chunks=8)
+        prompt = f"""Create {question_count} long-answer university examination questions.
+Difficulty: {difficulty}. Focus on Explain / Discuss / Analyze / Compare / Describe processes / Cause and effect.
+Return only numbered questions.
+
+STUDY MATERIAL:
+{context}"""
+        with st.spinner("Generating long questions..."):
+            result = ask_groq(prompt, max_tokens=1800)
+        if result:
+            html('<div class="sm-card"></div>')
+            st.markdown(result)
             long_docx = make_questions_docx([line for line in result.splitlines() if line.strip()], "Long Examination Questions")
             if long_docx:
-                st.download_button("⬇️ Export long questions as DOCX", long_docx, file_name="studient-long-questions.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="export_long_docx") 
- 
-# ---------------- SHORT QUESTIONS ---------------- 
-with tabs[5]: 
-    st.header("🎯 Short Questions") 
-    st.caption("Practice definitions, facts and short conceptual questions.") 
-    if st.button("✨ Generate Short Questions", key="gen_short"): 
-        context = get_relevant_chunks(st.session_state.pdf_text, "definitions facts terms concepts differences", max_chunks=8) 
-        prompt = f"""Create {question_count} short-answer questions from this study material. 
-Focus on Definitions / Facts / Important terms / Differences / Basic concepts. 
-Return only numbered questions. 
- 
-STUDY MATERIAL: 
-{context}""" 
-        with st.spinner("Generating short questions..."): 
-            result = ask_groq(prompt, max_tokens=1800) 
-        if result: 
-            html('<div class="sm-card"></div>') 
-            st.markdown(result) 
+                st.download_button("⬇️ Export long questions as DOCX", long_docx, file_name="studient-long-questions.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="export_long_docx")
+
+# ---------------- SHORT QUESTIONS ----------------
+with tabs[5]:
+    st.header("🎯 Short Questions")
+    st.caption("Practice definitions, facts and short conceptual questions.")
+    if st.button("✨ Generate Short Questions", key="gen_short"):
+        context = get_relevant_chunks(st.session_state.pdf_text, "definitions facts terms concepts differences", max_chunks=8)
+        prompt = f"""Create {question_count} short-answer questions from this study material.
+Focus on Definitions / Facts / Important terms / Differences / Basic concepts.
+Return only numbered questions.
+
+STUDY MATERIAL:
+{context}"""
+        with st.spinner("Generating short questions..."):
+            result = ask_groq(prompt, max_tokens=1800)
+        if result:
+            html('<div class="sm-card"></div>')
+            st.markdown(result)
             short_docx = make_questions_docx([line for line in result.splitlines() if line.strip()], "Short Questions")
             if short_docx:
-                st.download_button("⬇️ Export short questions as DOCX", short_docx, file_name="studient-short-questions.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="export_short_docx") 
- 
-# ---------------- KEY CONCEPTS ---------------- 
-with tabs[6]: 
-    st.header("🔍 Key Concepts") 
-    st.caption("Extract the concepts you should know before your exam.") 
-    if st.button("✨ Extract Key Concepts", key="gen_concepts"): 
-        context = get_relevant_chunks(st.session_state.pdf_text, "main concepts important ideas definitions topics", max_chunks=8) 
-        prompt = f"""Identify the most important concepts in the study material. 
-For every concept provide: CONCEPT / Short explanation / Why it matters for the exam. 
- 
-STUDY MATERIAL: 
-{context}""" 
-        with st.spinner("Identifying key concepts..."): 
-            result = ask_groq(prompt, max_tokens=2600) 
-        if result: 
-            html('<div class="sm-card"></div>') 
-            st.markdown(result) 
- 
-# ---------------- DIFFICULTY ANALYSIS ---------------- 
-with tabs[7]: 
-    st.header("📊 Difficulty Analysis") 
-    st.caption("Find the topics that may require the most preparation.") 
-    if st.button("✨ Analyze Difficulty", key="gen_diff"): 
-        context = get_relevant_chunks(st.session_state.pdf_text, "complex difficult advanced conceptual process", max_chunks=8) 
-        prompt = f"""Analyze the difficulty of this study material. Provide: 
-1. Overall difficulty 2. Easy topics 3. Medium topics 4. Difficult topics 
-5. Concepts requiring memorization 6. Concepts requiring deep understanding 
-7. Topics most likely to challenge students 8. Recommended study priority. 
- 
-STUDY MATERIAL: 
-{context}""" 
-        with st.spinner("Analyzing difficulty..."): 
-            result = ask_groq(prompt, max_tokens=2600) 
-        if result: 
-            html('<div class="sm-card"></div>') 
-            st.markdown(result) 
- 
-# ---------------- PRACTICE TEST (graded, interactive) ---------------- 
-with tabs[8]: 
-    st.header("🧪 Practice Test") 
-    st.caption("Answers are hidden until you submit each question — no peeking.") 
- 
-    if st.session_state.quiz_questions is None: 
+                st.download_button("⬇️ Export short questions as DOCX", short_docx, file_name="studient-short-questions.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="export_short_docx")
+
+# ---------------- KEY CONCEPTS ----------------
+with tabs[6]:
+    st.header("🔍 Key Concepts")
+    st.caption("Extract the concepts you should know before your exam.")
+    if st.button("✨ Extract Key Concepts", key="gen_concepts"):
+        context = get_relevant_chunks(st.session_state.pdf_text, "main concepts important ideas definitions topics", max_chunks=8)
+        prompt = f"""Identify the most important concepts in the study material.
+For every concept provide: CONCEPT / Short explanation / Why it matters for the exam.
+
+STUDY MATERIAL:
+{context}"""
+        with st.spinner("Identifying key concepts..."):
+            result = ask_groq(prompt, max_tokens=2600)
+        if result:
+            html('<div class="sm-card"></div>')
+            st.markdown(result)
+
+# ---------------- DIFFICULTY ANALYSIS ----------------
+with tabs[7]:
+    st.header("📊 Difficulty Analysis")
+    st.caption("Find the topics that may require the most preparation.")
+    if st.button("✨ Analyze Difficulty", key="gen_diff"):
+        context = get_relevant_chunks(st.session_state.pdf_text, "complex difficult advanced conceptual process", max_chunks=8)
+        prompt = f"""Analyze the difficulty of this study material. Provide:
+1. Overall difficulty 2. Easy topics 3. Medium topics 4. Difficult topics
+5. Concepts requiring memorization 6. Concepts requiring deep understanding
+7. Topics most likely to challenge students 8. Recommended study priority.
+
+STUDY MATERIAL:
+{context}"""
+        with st.spinner("Analyzing difficulty..."):
+            result = ask_groq(prompt, max_tokens=2600)
+        if result:
+            html('<div class="sm-card"></div>')
+            st.markdown(result)
+
+# ---------------- PRACTICE TEST (graded, interactive) ----------------
+with tabs[8]:
+    st.header("🧪 Practice Test")
+    st.caption("Answers are hidden until you submit each question — no peeking.")
+
+    if st.session_state.quiz_questions is None:
         if st.session_state.get("incorrect_questions"):
             if st.button("🔁 Retake Incorrect Questions", key="retake_incorrect"):
                 st.session_state.quiz_questions = st.session_state.incorrect_questions
@@ -2629,23 +2491,23 @@ with tabs[8]:
                 st.session_state.test_started_at = time.time()
                 st.session_state.test_timed_out = False
                 st.rerun()
-        if st.button("🚀 Start New Test", key="start_test"): 
-            with st.spinner("Preparing your practice test..."): 
-                questions = generate_quiz_questions(st.session_state.pdf_text, question_count, difficulty, st.session_state.test_category) 
-            if questions: 
-                st.session_state.quiz_questions = questions 
-                st.session_state.quiz_index = 0 
-                st.session_state.quiz_answers = [] 
-                st.session_state.quiz_locked = False 
-                st.session_state.quiz_finished = False 
+        if st.button("🚀 Start New Test", key="start_test"):
+            with st.spinner("Preparing your practice test..."):
+                questions = generate_quiz_questions(st.session_state.pdf_text, question_count, difficulty, st.session_state.test_category)
+            if questions:
+                st.session_state.quiz_questions = questions
+                st.session_state.quiz_index = 0
+                st.session_state.quiz_answers = []
+                st.session_state.quiz_locked = False
+                st.session_state.quiz_finished = False
                 st.session_state.test_started_at = time.time()
                 st.session_state.test_timed_out = False
-                st.rerun() 
- 
-    elif not st.session_state.quiz_finished: 
-        questions = st.session_state.quiz_questions 
-        idx = st.session_state.quiz_index 
-        q = questions[idx] 
+                st.rerun()
+
+    elif not st.session_state.quiz_finished:
+        questions = st.session_state.quiz_questions
+        idx = st.session_state.quiz_index
+        q = questions[idx]
 
         if st.session_state.timed_mode:
             if st_autorefresh is not None:
@@ -2657,61 +2519,61 @@ with tabs[8]:
                 st.session_state.test_timed_out = True
                 st.session_state.quiz_finished = True
                 st.rerun()
- 
-        html(f'<div class="sm-quiz-progress">Question {idx + 1} of {len(questions)}</div>') 
-        html(f'<div class="sm-quiz-topic">{q["topic"]}</div>') 
-        html(f'<div class="sm-quiz-q">{q["question"]}</div>') 
- 
-        option_labels = [f"{letter}) {text}" for letter, text in q["options"].items()] 
-        choice = st.radio("Choose an answer:", option_labels, key=f"choice_{idx}", 
-                           disabled=st.session_state.quiz_locked, label_visibility="collapsed") 
-        chosen_letter = choice.split(")")[0] if choice else None 
- 
-        if not st.session_state.quiz_locked: 
-            if st.button("✅ Submit Answer", key=f"submit_{idx}"): 
-                is_correct = chosen_letter == q["correct"] 
-                st.session_state.quiz_answers.append({ 
-                    "topic": q["topic"], "correct": is_correct, 
+
+        html(f'<div class="sm-quiz-progress">Question {idx + 1} of {len(questions)}</div>')
+        html(f'<div class="sm-quiz-topic">{q["topic"]}</div>')
+        html(f'<div class="sm-quiz-q">{q["question"]}</div>')
+
+        option_labels = [f"{letter}) {text}" for letter, text in q["options"].items()]
+        choice = st.radio("Choose an answer:", option_labels, key=f"choice_{idx}",
+                           disabled=st.session_state.quiz_locked, label_visibility="collapsed")
+        chosen_letter = choice.split(")")[0] if choice else None
+
+        if not st.session_state.quiz_locked:
+            if st.button("✅ Submit Answer", key=f"submit_{idx}"):
+                is_correct = chosen_letter == q["correct"]
+                st.session_state.quiz_answers.append({
+                    "topic": q["topic"], "correct": is_correct,
                     "chosen": chosen_letter, "answer": q["correct"], "question": q,
-                }) 
-                st.session_state.quiz_locked = True 
-                st.rerun() 
-        else: 
-            last = st.session_state.quiz_answers[-1] 
-            if last["correct"]: 
-                st.markdown('<span class="sm-result-correct">✔ Correct!</span>', unsafe_allow_html=True) 
-            else: 
-                st.markdown(f'<span class="sm-result-wrong">✘ Not quite — correct answer: {q["correct"]}</span>', unsafe_allow_html=True) 
-            st.caption(q["explanation"]) 
- 
-            if idx + 1 < len(questions): 
-                if st.button("➡️ Next Question", key=f"next_{idx}"): 
-                    st.session_state.quiz_index += 1 
-                    st.session_state.quiz_locked = False 
-                    st.rerun() 
-            else: 
-                if st.button("🏁 Finish Test", key="finish_test"): 
-                    st.session_state.quiz_finished = True 
-                    st.rerun() 
- 
-    else: 
-        answers = st.session_state.quiz_answers 
-        score = sum(1 for a in answers if a["correct"]) 
-        total = len(answers) 
+                })
+                st.session_state.quiz_locked = True
+                st.rerun()
+        else:
+            last = st.session_state.quiz_answers[-1]
+            if last["correct"]:
+                st.markdown('<span class="sm-result-correct">✔ Correct!</span>', unsafe_allow_html=True)
+            else:
+                st.markdown(f'<span class="sm-result-wrong">✘ Not quite — correct answer: {q["correct"]}</span>', unsafe_allow_html=True)
+            st.caption(q["explanation"])
+
+            if idx + 1 < len(questions):
+                if st.button("➡️ Next Question", key=f"next_{idx}"):
+                    st.session_state.quiz_index += 1
+                    st.session_state.quiz_locked = False
+                    st.rerun()
+            else:
+                if st.button("🏁 Finish Test", key="finish_test"):
+                    st.session_state.quiz_finished = True
+                    st.rerun()
+
+    else:
+        answers = st.session_state.quiz_answers
+        score = sum(1 for a in answers if a["correct"])
+        total = len(answers)
         penalty = sum(0.25 for a in answers if not a["correct"]) if st.session_state.negative_marking else 0
         final_points = max(0, score - penalty)
         pct = round((final_points / total) * 100) if total else 0
         st.session_state.incorrect_questions = [a.get("question") for a in answers if not a["correct"] and a.get("question")]
- 
-        topic_stats = defaultdict(lambda: {"correct": 0, "wrong": 0}) 
-        for a in answers: 
-            topic_stats[a["topic"]]["correct" if a["correct"] else "wrong"] += 1 
- 
-        if st.session_state.get("last_saved_index") != id(answers): 
-            save_attempt(st.session_state.document_name, score, total, dict(topic_stats)) 
-            st.session_state["last_saved_index"] = id(answers) 
+
+        topic_stats = defaultdict(lambda: {"correct": 0, "wrong": 0})
+        for a in answers:
+            topic_stats[a["topic"]]["correct" if a["correct"] else "wrong"] += 1
+
+        if st.session_state.get("last_saved_index") != id(answers):
+            save_attempt(st.session_state.document_name, score, total, dict(topic_stats))
+            st.session_state["last_saved_index"] = id(answers)
             st.rerun()
- 
+
         verdict = "Excellent! 🔥" if pct >= 80 else "Good work 👍" if pct >= 60 else "Keep practicing 💪"
         adaptive = "Try a harder difficulty next time." if pct >= 85 else "Review missed concepts before your next test." if pct < 60 else "Stay at this difficulty and build consistency."
         timing_note = " Time expired." if st.session_state.test_timed_out else ""
@@ -2733,28 +2595,28 @@ with tabs[8]:
         test_pdf = make_pdf_bytes(f"Studient AI Practice Test — {pct}%", test_sections)
         if test_pdf:
             st.download_button("⬇️ Export practice test as PDF", test_pdf, file_name="studient-practice-test.pdf", mime="application/pdf", key="export_practice_test_pdf")
- 
-        weak = [t for t, s in topic_stats.items() if s["wrong"] > s["correct"]] 
-        strong = [t for t, s in topic_stats.items() if s["correct"] > s["wrong"]] 
- 
-        col1, col2 = st.columns(2) 
-        with col1: 
-            st.markdown("**Weak topics**") 
-            html("".join(f'<span class="sm-tag-weak">{t}</span>' for t in weak) or "<i>None — nice.</i>") 
-        with col2: 
-            st.markdown("**Strong topics**") 
-            html("".join(f'<span class="sm-tag-strong">{t}</span>' for t in strong) or "<i>None yet.</i>") 
- 
-        if st.button("🔄 Take Another Test", key="retake"): 
-            reset_quiz() 
-            st.rerun() 
- 
-# ---------------- ANALYTICS ---------------- 
-with tabs[9]: 
-    st.header("📈 Study Analytics") 
-    history = load_history() 
-    doc_history = [h for h in history if h["document"] == st.session_state.document_name] 
- 
+
+        weak = [t for t, s in topic_stats.items() if s["wrong"] > s["correct"]]
+        strong = [t for t, s in topic_stats.items() if s["correct"] > s["wrong"]]
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Weak topics**")
+            html("".join(f'<span class="sm-tag-weak">{t}</span>' for t in weak) or "<i>None — nice.</i>")
+        with col2:
+            st.markdown("**Strong topics**")
+            html("".join(f'<span class="sm-tag-strong">{t}</span>' for t in strong) or "<i>None yet.</i>")
+
+        if st.button("🔄 Take Another Test", key="retake"):
+            reset_quiz()
+            st.rerun()
+
+# ---------------- ANALYTICS ----------------
+with tabs[9]:
+    st.header("📈 Study Analytics")
+    history = load_history()
+    doc_history = [h for h in history if h["document"] == st.session_state.document_name]
+
     data = analytics_snapshot(st.session_state.document_name)
     if not doc_history:
         html('<div class="sm-card"><p>No test attempts yet for this document. Take a Practice Test to see your analytics here.</p></div>')
@@ -2787,7 +2649,7 @@ with tabs[9]:
         st.markdown("#### Recommended next topic")
         st.info(f"Review **{data['weakest']}** next, then practice the related flashcards before your next test.")
         st.caption("Analytics are stored locally to this app instance and reset if the app restarts or redeploys.")
- 
+
 
 # ---------------- INTERACTIVE MIND MAP ----------------
 with tabs[10]:
@@ -2812,63 +2674,63 @@ with tabs[10]:
     else:
         html('<div class="sm-card"><p>Generate a mind map to explore your document visually. Each branch is grounded in the uploaded material.</p></div>')
 
-# ---------------- ASK WORKSPACE ---------------- 
-with tabs[15]: 
-    st.header("💬 Ask Workspace / Outside Knowledge") 
-    st.caption("Ask questions grounded in your uploaded workspace, or optionally let Studient AI add clearly labeled general knowledge.") 
- 
-    use_general_knowledge = st.checkbox( 
-        "💡 Include outside / general knowledge", 
-        value=False, 
-        help="Off = strict, hallucination-safe answers grounded only in your PDF (best for studying facts). " 
-             "On = the PDF is used as context, but the AI can add its own knowledge and ideas — " 
-             "answers will clearly separate what came from your document vs. general knowledge.", 
-    ) 
- 
-    user_question = st.text_input("Your question", placeholder="e.g. Explain the process of stellar evolution.") 
-    if st.button("🤖 Ask Studient", key="ask_pdf"): 
-        if not user_question.strip(): 
-            st.warning("Please enter a question first.") 
-        else: 
-            context = get_relevant_chunks(st.session_state.pdf_text, user_question, max_chunks=7) 
- 
-            if use_general_knowledge: 
-                prompt = f"""The student uploaded the document below and is asking a question that may go 
-beyond what the document literally states (e.g. asking for improvements, opinions, or ideas). 
- 
-Answer helpfully using BOTH the document and your own general knowledge. Structure your answer 
-in two clearly labeled parts: 
- 
-📄 From your document: 
-(what the document itself says that's relevant — if nothing is relevant, say so briefly) 
- 
-💡 Suggestions / general knowledge: 
-(your own ideas, recommendations, or knowledge that goes beyond the document — be specific and practical) 
- 
-Do not present your own knowledge as if it came from the document. 
- 
-DOCUMENT CONTENT: 
-{context} 
- 
-STUDENT QUESTION: 
-{user_question}""" 
-            else: 
-                prompt = f"""Answer the student's question using ONLY the information in the provided workspace material. 
-If the answer cannot be found, say clearly: "The answer is not available in the uploaded PDF." 
-Do not invent facts. Explain clearly, use bullet points if useful. 
- 
-WORKSPACE MATERIAL: 
-{context} 
- 
-STUDENT QUESTION: 
-{user_question}""" 
- 
-            with st.spinner("Searching your PDF and thinking..."): 
-                answer = ask_groq(prompt, max_tokens=2500) 
-            if answer: 
-                title = "🤖 StudientAI Answer" if not use_general_knowledge else "🤖 StudientAI Answer (PDF + general knowledge)" 
-                html(f'<div class="sm-answer"><div class="title">{title}</div></div>') 
-                st.markdown(answer) 
+# ---------------- ASK WORKSPACE ----------------
+with tabs[15]:
+    st.header("💬 Ask Workspace / Outside Knowledge")
+    st.caption("Ask questions grounded in your uploaded workspace, or optionally let Studient AI add clearly labeled general knowledge.")
+
+    use_general_knowledge = st.checkbox(
+        "💡 Include outside / general knowledge",
+        value=False,
+        help="Off = strict, hallucination-safe answers grounded only in your PDF (best for studying facts). "
+             "On = the PDF is used as context, but the AI can add its own knowledge and ideas — "
+             "answers will clearly separate what came from your document vs. general knowledge.",
+    )
+
+    user_question = st.text_input("Your question", placeholder="e.g. Explain the process of stellar evolution.")
+    if st.button("🤖 Ask Studient", key="ask_pdf"):
+        if not user_question.strip():
+            st.warning("Please enter a question first.")
+        else:
+            context = get_relevant_chunks(st.session_state.pdf_text, user_question, max_chunks=7)
+
+            if use_general_knowledge:
+                prompt = f"""The student uploaded the document below and is asking a question that may go
+beyond what the document literally states (e.g. asking for improvements, opinions, or ideas).
+
+Answer helpfully using BOTH the document and your own general knowledge. Structure your answer
+in two clearly labeled parts:
+
+📄 From your document:
+(what the document itself says that's relevant — if nothing is relevant, say so briefly)
+
+💡 Suggestions / general knowledge:
+(your own ideas, recommendations, or knowledge that goes beyond the document — be specific and practical)
+
+Do not present your own knowledge as if it came from the document.
+
+DOCUMENT CONTENT:
+{context}
+
+STUDENT QUESTION:
+{user_question}"""
+            else:
+                prompt = f"""Answer the student's question using ONLY the information in the provided workspace material.
+If the answer cannot be found, say clearly: "The answer is not available in the uploaded PDF."
+Do not invent facts. Explain clearly, use bullet points if useful.
+
+WORKSPACE MATERIAL:
+{context}
+
+STUDENT QUESTION:
+{user_question}"""
+
+            with st.spinner("Searching your PDF and thinking..."):
+                answer = ask_groq(prompt, max_tokens=2500)
+            if answer:
+                title = "🤖 StudientAI Answer" if not use_general_knowledge else "🤖 StudientAI Answer (PDF + general knowledge)"
+                html(f'<div class="sm-answer"><div class="title">{title}</div></div>')
+                st.markdown(answer)
 
 # ---------------- STUDY PLAN ----------------
 with tabs[11]:
@@ -2956,12 +2818,12 @@ with tabs[14]:
         st.markdown(st.session_state.sample_paper)
         st.download_button("⬇️ Download sample paper", st.session_state.sample_paper, file_name="studient-university-sample-paper.md", mime="text/markdown", key="download_sample_paper")
 
-# ============================================================ 
-# FOOTER 
-# ============================================================ 
- 
-html(""" 
-<div style="margin-top:44px; padding:26px; text-align:center; color:#94a3b8; font-size:13px; border-top:1px solid rgba(20,20,40,0.08);"> 
-  🧠 StudientAI — All rights reserved to Sharjeelsarwar-ai2 
-</div> 
+# ============================================================
+# FOOTER
+# ============================================================
+
+html("""
+<div style="margin-top:44px; padding:26px; text-align:center; color:#94a3b8; font-size:13px; border-top:1px solid rgba(20,20,40,0.08);">
+  🧠 StudientAI — All rights reserved to Sharjeelsarwar-ai2
+</div>
 """)
