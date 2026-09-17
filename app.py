@@ -10,7 +10,7 @@ Flat single-row tab layout (matches the original UI), with the graded
 interactive Test and Analytics features folded in as regular tabs. 
  
 Requires: streamlit>=1.45.0, groq, pypdf, python-docx, python-pptx 
-""" 
+"""
  
 import streamlit as st 
 from pypdf import PdfReader 
@@ -761,14 +761,95 @@ html("""
 .stApp > header, [data-testid="stHeader"] { backdrop-filter:blur(14px) saturate(135%) !important; -webkit-backdrop-filter:blur(14px) saturate(135%) !important; }
 [data-testid="stToolbar"], [data-testid="stStatusWidget"] { backdrop-filter:blur(10px) !important; -webkit-backdrop-filter:blur(10px) !important; }
 .sm-card, .sm-dashboard, .sm-feature, .sm-metric, .sm-document-bar, .sm-progress-dashboard { will-change:auto !important; }
-/* NAVIGATION HIERARCHY: large fixed parent sections, compact child tabs */
+
+/* ============================================================
+   NAVIGATION HIERARCHY FIX
+   - Parent tabs (Study Desk / AI Studio / AI Learning) = 3 long, equal-width pills
+   - Child tabs (Summary / Flashcards / ...) = compact pills below
+   - Removes the "between tab" underline/highlight bar that appeared between rows
+   ============================================================ */
+
+/* Kill Streamlit's default underline + moving highlight everywhere */
+.stTabs [data-baseweb="tab-highlight"],
+.stTabs [data-baseweb="tab-border"] {
+  display: none !important;
+  height: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* ---------- PARENT ROW (first st.tabs on the page) ---------- */
 .main [data-testid="stTabs"]:first-of-type { margin-top:-10px; }
-.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] { position:sticky !important; top:3.15rem; z-index:30; width:100%; min-height:68px; padding:9px 14px !important; gap:12px !important; border-radius:0 0 22px 22px; background:linear-gradient(110deg,rgba(224,231,255,.94),rgba(255,255,255,.88) 48%,rgba(253,242,255,.94)) !important; border-bottom:1px solid rgba(124,58,237,.18); box-shadow:0 10px 24px rgba(31,25,90,.12) !important; }
-.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] [data-baseweb="tab"] { min-height:50px; padding:12px 25px !important; border-radius:999px; font-size:17px !important; font-weight:750; letter-spacing:.1px; }
-.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] [aria-selected="true"] { color:#fff !important; background:linear-gradient(135deg,var(--accent1),var(--accent2),var(--accent4)) !important; box-shadow:0 8px 18px rgba(79,70,229,.28) !important; }
-.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] { position:relative !important; top:auto !important; z-index:1; margin:8px 0 20px; padding:6px 8px !important; gap:3px !important; border-radius:15px; background:rgba(255,255,255,.38) !important; border-bottom:1px solid rgba(124,58,237,.12); box-shadow:none !important; }
-.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { min-height:38px; padding:8px 14px !important; border-radius:10px; color:var(--ink-soft); font-size:12px !important; font-weight:650; }
-.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] [aria-selected="true"] { color:var(--accent1) !important; background:rgba(79,70,229,.11) !important; box-shadow:none !important; }
+
+.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] {
+  display: flex !important;
+  width: 100% !important;
+  position: sticky !important;
+  top: 3.15rem;
+  z-index: 30;
+  min-height: 68px;
+  padding: 9px 14px !important;
+  gap: 12px !important;
+  border-radius: 22px !important;      /* full pill bar, no bottom-only corners */
+  background: linear-gradient(110deg, rgba(224,231,255,.94), rgba(255,255,255,.88) 48%, rgba(253,242,255,.94)) !important;
+  border: 1px solid rgba(124,58,237,.18) !important;   /* subtle outline, no bottom divider */
+  box-shadow: 0 10px 24px rgba(31,25,90,.12) !important;
+  overflow-x: visible !important;
+}
+
+/* each parent tab stretches to fill an equal 1/3 of the row */
+.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] [data-baseweb="tab"] {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  min-height: 50px;
+  padding: 12px 25px !important;
+  border-radius: 999px !important;
+  font-size: 17px !important;
+  font-weight: 750;
+  letter-spacing: .1px;
+  justify-content: center !important;
+  text-align: center !important;
+}
+
+.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] [aria-selected="true"] {
+  color: #fff !important;
+  background: linear-gradient(135deg, var(--accent1), var(--accent2), var(--accent4)) !important;
+  box-shadow: 0 8px 18px rgba(79,70,229,.28) !important;
+}
+
+/* ---------- CHILD ROW (nested st.tabs inside a parent) ---------- */
+.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] {
+  display: flex !important;
+  width: 100% !important;
+  position: relative !important;
+  top: auto !important;
+  z-index: 1;
+  margin: 8px 0 20px;
+  padding: 6px 8px !important;
+  gap: 6px !important;
+  border-radius: 15px !important;
+  background: rgba(255,255,255,.38) !important;
+  border: 1px solid rgba(124,58,237,.10) !important;   /* no bottom-only divider */
+  box-shadow: none !important;
+  overflow-x: auto !important;
+}
+
+.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] [data-baseweb="tab"] {
+  flex: 0 0 auto !important;
+  min-height: 38px;
+  padding: 8px 14px !important;
+  border-radius: 10px;
+  color: var(--ink-soft);
+  font-size: 12px !important;
+  font-weight: 650;
+}
+
+.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] [aria-selected="true"] {
+  color: var(--accent1) !important;
+  background: rgba(79,70,229,.11) !important;
+  box-shadow: none !important;
+}
+
 @media (max-width: 700px) {
   .main .block-container { padding: .85rem .7rem 5.5rem !important; }
   .sm-hero { margin: 0 -2px 16px; padding: 32px 18px 28px !important; }
@@ -849,7 +930,7 @@ def ask_groq(prompt, system_message=None, max_tokens=2000):
             last_error = e 
             continue 
     st.error(f"Groq API error: {last_error}") 
-    return "" 
+    return ""
 
 
 def generate_speech_audio(text, language="en"):
