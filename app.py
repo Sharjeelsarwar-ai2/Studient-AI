@@ -753,6 +753,14 @@ label.sm-flip-inner:focus-within { outline:3px solid #0ea5e9; outline-offset:5px
 
 html("""
 <style>
+/* PERFORMANCE PASS: preserve the glass look without continuous GPU-heavy motion */
+.sm-hero, .sm-card, .sm-feature, .sm-metric, .sm-document-bar { animation:none !important; }
+.sm-hero::after { animation:none !important; filter:none !important; opacity:.32; }
+.sm-metric, .stButton > button, .stDownloadButton > button, .stTabs [data-baseweb="tab"] { transition:none !important; }
+.sm-metric:hover, .stButton > button:hover, .stDownloadButton > button:hover { transform:none !important; }
+.stApp > header, [data-testid="stHeader"] { backdrop-filter:blur(14px) saturate(135%) !important; -webkit-backdrop-filter:blur(14px) saturate(135%) !important; }
+[data-testid="stToolbar"], [data-testid="stStatusWidget"] { backdrop-filter:blur(10px) !important; -webkit-backdrop-filter:blur(10px) !important; }
+.sm-card, .sm-dashboard, .sm-feature, .sm-metric, .sm-document-bar, .sm-progress-dashboard { will-change:auto !important; }
 @media (max-width: 700px) {
   .main .block-container { padding: .85rem .7rem 5.5rem !important; }
   .sm-hero { margin: 0 -2px 16px; padding: 32px 18px 28px !important; }
