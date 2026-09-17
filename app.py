@@ -761,6 +761,14 @@ html("""
 .stApp > header, [data-testid="stHeader"] { backdrop-filter:blur(14px) saturate(135%) !important; -webkit-backdrop-filter:blur(14px) saturate(135%) !important; }
 [data-testid="stToolbar"], [data-testid="stStatusWidget"] { backdrop-filter:blur(10px) !important; -webkit-backdrop-filter:blur(10px) !important; }
 .sm-card, .sm-dashboard, .sm-feature, .sm-metric, .sm-document-bar, .sm-progress-dashboard { will-change:auto !important; }
+/* NAVIGATION HIERARCHY: large fixed parent sections, compact child tabs */
+.main [data-testid="stTabs"]:first-of-type { margin-top:-10px; }
+.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] { position:sticky !important; top:3.15rem; z-index:30; width:100%; min-height:68px; padding:9px 14px !important; gap:12px !important; border-radius:0 0 22px 22px; background:linear-gradient(110deg,rgba(224,231,255,.94),rgba(255,255,255,.88) 48%,rgba(253,242,255,.94)) !important; border-bottom:1px solid rgba(124,58,237,.18); box-shadow:0 10px 24px rgba(31,25,90,.12) !important; }
+.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] [data-baseweb="tab"] { min-height:50px; padding:12px 25px !important; border-radius:999px; font-size:17px !important; font-weight:750; letter-spacing:.1px; }
+.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] [aria-selected="true"] { color:#fff !important; background:linear-gradient(135deg,var(--accent1),var(--accent2),var(--accent4)) !important; box-shadow:0 8px 18px rgba(79,70,229,.28) !important; }
+.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] { position:relative !important; top:auto !important; z-index:1; margin:8px 0 20px; padding:6px 8px !important; gap:3px !important; border-radius:15px; background:rgba(255,255,255,.38) !important; border-bottom:1px solid rgba(124,58,237,.12); box-shadow:none !important; }
+.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { min-height:38px; padding:8px 14px !important; border-radius:10px; color:var(--ink-soft); font-size:12px !important; font-weight:650; }
+.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] [aria-selected="true"] { color:var(--accent1) !important; background:rgba(79,70,229,.11) !important; box-shadow:none !important; }
 @media (max-width: 700px) {
   .main .block-container { padding: .85rem .7rem 5.5rem !important; }
   .sm-hero { margin: 0 -2px 16px; padding: 32px 18px 28px !important; }
