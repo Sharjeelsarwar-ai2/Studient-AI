@@ -10,7 +10,7 @@ Flat single-row tab layout (matches the original UI), with the graded
 interactive Test and Analytics features folded in as regular tabs. 
  
 Requires: streamlit>=1.45.0, groq, pypdf, python-docx, python-pptx 
-"""
+""" 
  
 import streamlit as st 
 from pypdf import PdfReader 
@@ -281,6 +281,24 @@ section[data-testid="stSidebar"] {
 [data-testid="stMetric"] { 
   padding: 14px; border-radius: 16px; background: rgba(255,255,255,0.6); 
   border: 1px solid var(--glass-border); backdrop-filter: blur(14px); 
+} 
+ 
+/* FLAT SCROLLABLE TAB ROW -- glass pill bar */ 
+.stTabs [data-baseweb="tab-list"] { 
+  gap: 4px; padding: 7px; border-radius: 18px; background: var(--glass-bg); 
+  border: 1px solid var(--glass-border); box-shadow: var(--glass-shadow); 
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); 
+  overflow-x: auto; flex-wrap: nowrap; 
+} 
+.stTabs [data-baseweb="tab"] { border-radius: 999px; padding: 10px 18px; font-weight: 600; border:none; color: var(--ink-soft); white-space: nowrap; } 
+.stTabs [aria-selected="true"] { 
+  color: white !important; 
+  background: linear-gradient(135deg, var(--accent1), var(--accent2)) !important;
+  border-radius:999px !important;
+  padding: 10px 18px !important;
+  border: none !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0,12) !important;
+  
 } 
  
 /* FLASHCARDS -- real flip cards, pure CSS (checkbox hack), no JS */ 
@@ -642,6 +660,12 @@ section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .7rem; }
 .sm-metric { padding: 22px 24px; border-radius: 22px; background: linear-gradient(145deg, rgba(255,255,255,.82), rgba(232,238,255,.58)); box-shadow: 0 13px 32px rgba(31,25,90,.13), inset 0 1px 0 rgba(255,255,255,.86); transition: transform .18s ease, box-shadow .18s ease; }
 .sm-metric:hover { transform: translateY(-2px); box-shadow: 0 16px 34px rgba(31,25,90,.16); }
 .sm-metric .value { font-size: clamp(25px, 2.3vw, 35px); letter-spacing: -.8px; }
+.stTabs { margin-top: 8px; }
+.stTabs [data-baseweb="tab-list"] { gap: 6px; padding: 8px; border-radius: 20px; position: sticky; top: 3.25rem; z-index: 5; background: rgba(255,255,255,.62); box-shadow: 0 12px 30px rgba(31,25,90,.13), inset 0 1px 0 rgba(255,255,255,.82); }
+.stTabs [data-baseweb="tab"] { min-height: 42px; padding: 10px 16px; font-size: 13px; transition: background .18s ease, color .18s ease, transform .18s ease; }
+.stTabs [data-baseweb="tab"]:hover { color: var(--accent1); background: rgba(79,70,229,.08); }
+.stTabs [aria-selected="true"] { box-shadow: 0 8px 18px rgba(79,70,229,.24) !important; }
+.stTabs [data-baseweb="tab-highlight"] { display: none; }
 .stButton > button, .stDownloadButton > button { min-height: 48px; border-radius: 14px; letter-spacing: .05px; }
 .stButton > button:focus, .stDownloadButton > button:focus { outline: 3px solid rgba(14,165,233,.25); outline-offset: 2px; }
 [data-testid="stFileUploader"] { padding: 10px; border-radius: 20px; box-shadow: 0 8px 24px rgba(31,25,90,.08); }
@@ -705,6 +729,8 @@ hr { border-color: rgba(79,70,229,.12); }
 .sm-dashboard-insights b.negative { color:#dc2626; }
 .sm-dashboard-columns > div { min-width:0; }
 .stApp .main .block-container { width:100%; max-width:1440px; }
+.stTabs [data-baseweb="tab-list"] { overflow-x:auto; scrollbar-width:thin; }
+.stTabs [data-baseweb="tab"] { white-space:nowrap; }
 .stButton > button, .stDownloadButton > button { box-shadow:0 5px 14px rgba(31,25,90,.07); transition:transform .16s ease, box-shadow .16s ease; }
 .stButton > button:hover, .stDownloadButton > button:hover { transform:translateY(-1px); box-shadow:0 8px 18px rgba(79,70,229,.16); }
 .sm-sr-only { position:absolute !important; width:1px !important; height:1px !important; padding:0 !important; margin:-1px !important; overflow:hidden !important; clip:rect(0,0,0,0) !important; white-space:nowrap !important; border:0 !important; }
@@ -727,167 +753,48 @@ label.sm-flip-inner:focus-within { outline:3px solid #0ea5e9; outline-offset:5px
 
 html("""
 <style>
-/* PERFORMANCE PASS */
+/* PERFORMANCE PASS: preserve the glass look without continuous GPU-heavy motion */
 .sm-hero, .sm-card, .sm-feature, .sm-metric, .sm-document-bar { animation:none !important; }
 .sm-hero::after { animation:none !important; filter:none !important; opacity:.32; }
+.sm-metric, .stButton > button, .stDownloadButton > button, .stTabs [data-baseweb="tab"] { transition:none !important; }
+.sm-metric:hover, .stButton > button:hover, .stDownloadButton > button:hover { transform:none !important; }
 .stApp > header, [data-testid="stHeader"] { backdrop-filter:blur(14px) saturate(135%) !important; -webkit-backdrop-filter:blur(14px) saturate(135%) !important; }
 [data-testid="stToolbar"], [data-testid="stStatusWidget"] { backdrop-filter:blur(10px) !important; -webkit-backdrop-filter:blur(10px) !important; }
 .sm-card, .sm-dashboard, .sm-feature, .sm-metric, .sm-document-bar, .sm-progress-dashboard { will-change:auto !important; }
-
-/* ============================================================
-   TABS — flat 3-up parent bar + compact child pills
-   Matches: Study desk | AI studio | AI learning   (full width, equal)
-            Summary | Key concepts | Ask workspace (compact pills)
-   ============================================================ */
-
-/* 1) Kill Streamlit's default underline + animated slider everywhere */
-[data-baseweb="tab-highlight"],
-[data-baseweb="tab-border"] {
-  display: none !important;
-  visibility: hidden !important;
-  width: 0 !important;
-  height: 0 !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  opacity: 0 !important;
-  position: absolute !important;
-  pointer-events: none !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-/* 2) PARENT TAB ROW — full width, 3 equal tabs, thin bottom divider */
-[data-testid="stTabs"] > [role="tablist"],
-[data-testid="stTabs"] > [data-baseweb="tab-list"] {
-  display: flex !important;
-  flex-wrap: nowrap !important;
-  width: 100% !important;
-  align-items: stretch !important;
-  gap: 6px !important;
-  padding: 0 0 8px 0 !important;
-  margin: 0 0 12px 0 !important;
-  background: transparent !important;
-  border: none !important;
-  border-bottom: 1px solid rgba(148,163,184,.22) !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  overflow: visible !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-/* 3) PARENT TAB — each one grows to fill 1/3 of the row */
-[data-testid="stTabs"] > [role="tablist"] > [role="tab"],
-[data-testid="stTabs"] > [data-baseweb="tab-list"] > [data-baseweb="tab"] {
-  flex: 1 1 0% !important;
-  width: auto !important;
-  min-width: 0 !important;
-  max-width: none !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  text-align: center !important;
-  min-height: 52px !important;
-  padding: 12px 20px !important;
-  border-radius: 10px !important;
-  font-size: 16px !important;
-  font-weight: 700 !important;
-  letter-spacing: .2px !important;
-  color: var(--ink-soft) !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  white-space: nowrap !important;
-  transition: none !important;
-}
-
-/* 4) PARENT TAB — active state = filled blue rounded pill */
-[data-testid="stTabs"] > [role="tablist"] > [role="tab"][aria-selected="true"],
-[data-testid="stTabs"] > [data-baseweb="tab-list"] > [data-baseweb="tab"][aria-selected="true"] {
-  background: #1d4ed8 !important;
-  color: #ffffff !important;
-  box-shadow: 0 4px 14px rgba(29,78,216,.35) !important;
-}
-
-/* 5) CHILD TAB ROW — override back to compact (higher specificity) */
-[data-baseweb="tab-panel"] [data-testid="stTabs"] > [role="tablist"],
-[data-baseweb="tab-panel"] [data-testid="stTabs"] > [data-baseweb="tab-list"] {
-  border-bottom: none !important;
-  border: none !important;
-  margin: 4px 0 18px 0 !important;
-  padding: 0 !important;
-  gap: 6px !important;
-  background: transparent !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-}
-
-/* 6) CHILD TAB — compact pill, only as wide as its label */
-[data-baseweb="tab-panel"] [data-testid="stTabs"] > [role="tablist"] > [role="tab"],
-[data-baseweb="tab-panel"] [data-testid="stTabs"] > [data-baseweb="tab-list"] > [data-baseweb="tab"] {
-  flex: 0 0 auto !important;
-  width: auto !important;
-  min-width: 0 !important;
-  max-width: none !important;
-  min-height: 36px !important;
-  padding: 8px 16px !important;
-  border-radius: 8px !important;
-  font-size: 13px !important;
-  font-weight: 600 !important;
-  color: var(--ink-soft) !important;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-/* 7) CHILD TAB — active state = filled blue pill */
-[data-baseweb="tab-panel"] [data-testid="stTabs"] > [role="tablist"] > [role="tab"][aria-selected="true"],
-[data-baseweb="tab-panel"] [data-testid="stTabs"] > [data-baseweb="tab-list"] > [data-baseweb="tab"][aria-selected="true"] {
-  background: #1d4ed8 !important;
-  color: #ffffff !important;
-  box-shadow: 0 4px 12px rgba(29,78,216,.30) !important;
-}
-
-/* 8) Belt-and-braces: also override the earlier generic .stTabs rules */
-.stTabs [data-baseweb="tab-list"] {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  border-radius: 0 !important;
-  padding: 0 !important;
-}
-.stTabs [data-baseweb="tab-list"] > [data-baseweb="tab"] {
-  border-radius: 10px !important;
-  white-space: nowrap !important;
-}
-.stTabs [aria-selected="true"] {
-  color: #ffffff !important;
-  background: #1d4ed8 !important;
-  box-shadow: 0 4px 14px rgba(29,78,216,.30) !important;
-}
-.stTabs > [data-baseweb="tab-list"] {
-  border-bottom: 1px solid rgba(148,163,184,.22) !important;
-}
-[data-baseweb="tab-panel"] .stTabs > [data-baseweb="tab-list"] {
-  border-bottom: none !important;
-}
-
+/* NAVIGATION HIERARCHY: large fixed parent sections, compact child tabs */
+.main [data-testid="stTabs"]:first-of-type { margin-top:-10px; }
+.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] { position:sticky !important; top:3.15rem; z-index:30; width:100%; min-height:68px; padding:9px 14px !important; gap:12px !important; border-radius:0 0 22px 22px; background:linear-gradient(110deg,rgba(224,231,255,.94),rgba(255,255,255,.88) 48%,rgba(253,242,255,.94)) !important; border-bottom:1px solid rgba(124,58,237,.18); box-shadow:0 10px 24px rgba(31,25,90,.12) !important; }
+.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] [data-baseweb="tab"] { min-height:50px; padding:12px 25px !important; border-radius:999px; font-size:17px !important; font-weight:750; letter-spacing:.1px; }
+.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] [aria-selected="true"] { color:#fff !important; background:linear-gradient(135deg,var(--accent1),var(--accent2),var(--accent4)) !important; box-shadow:0 8px 18px rgba(79,70,229,.28) !important; }
+.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] { position:relative !important; top:auto !important; z-index:1; margin:8px 0 20px; padding:6px 8px !important; gap:3px !important; border-radius:15px; background:rgba(255,255,255,.38) !important; border-bottom:1px solid rgba(124,58,237,.12); box-shadow:none !important; }
+.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { min-height:38px; padding:8px 14px !important; border-radius:10px; color:var(--ink-soft); font-size:12px !important; font-weight:650; }
+.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] [aria-selected="true"] { color:var(--accent1) !important; background:rgba(79,70,229,.11) !important; box-shadow:none !important; }
+.sm-parent-nav-heading { display:flex; align-items:center; gap:12px; margin:10px 0 4px; padding:12px 16px; border-radius:16px; color:#fff; background:linear-gradient(110deg,var(--accent1),var(--accent2),var(--accent4)); box-shadow:0 8px 20px rgba(79,70,229,.2); font-size:16px; font-weight:800; letter-spacing:.1px; }
+.sm-parent-nav-heading small { opacity:.82; font-size:11px; font-weight:600; }
+.sm-child-nav-label { display:flex; align-items:center; gap:8px; margin:4px 0 -2px 12px; padding-left:10px; border-left:3px solid var(--accent3); color:var(--ink-faint); font-size:10px; font-weight:850; letter-spacing:.8px; text-transform:uppercase; }
+/* The outer tabs contain the section banners; make them the primary full-width navigation. */
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] { display:flex !important; width:100%; min-height:76px; padding:10px !important; gap:10px !important; position:sticky !important; top:3.15rem; z-index:40; border-radius:0 0 24px 24px; background:linear-gradient(105deg,rgba(224,231,255,.96),rgba(255,255,255,.92) 50%,rgba(253,242,255,.96)) !important; border-bottom:1px solid rgba(124,58,237,.18); box-shadow:0 10px 26px rgba(31,25,90,.14) !important; }
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { flex:1 1 0; justify-content:center; min-height:56px; padding:14px 24px !important; border-radius:17px; font-size:18px !important; font-weight:800; color:var(--ink-soft); }
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] [aria-selected="true"] { color:#fff !important; background:linear-gradient(135deg,var(--accent1),var(--accent2),var(--accent4)) !important; box-shadow:0 9px 20px rgba(79,70,229,.28) !important; }
+.main [data-testid="stTabs"]:not(:has(.sm-parent-nav-heading)) > div[data-baseweb="tab-list"] { position:relative !important; top:auto !important; min-height:42px; margin:8px 0 20px; padding:5px 8px !important; gap:3px !important; border-radius:15px; background:rgba(255,255,255,.40) !important; box-shadow:none !important; }
+.main [data-testid="stTabs"]:not(:has(.sm-parent-nav-heading)) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { min-height:36px; padding:7px 13px !important; border-radius:10px; font-size:12px !important; font-weight:650; }
 @media (max-width: 700px) {
-  [data-testid="stTabs"] > [role="tablist"] > [role="tab"],
-  [data-testid="stTabs"] > [data-baseweb="tab-list"] > [data-baseweb="tab"] {
-    font-size: 14px !important;
-    padding: 10px 12px !important;
-    min-height: 46px !important;
-  }
-  [data-baseweb="tab-panel"] [data-testid="stTabs"] > [role="tablist"] > [role="tab"],
-  [data-baseweb="tab-panel"] [data-testid="stTabs"] > [data-baseweb="tab-list"] > [data-baseweb="tab"] {
-    font-size: 12px !important;
-    padding: 7px 12px !important;
-  }
+  .main .block-container { padding: .85rem .7rem 5.5rem !important; }
+  .sm-hero { margin: 0 -2px 16px; padding: 32px 18px 28px !important; }
+  .sm-dashboard { padding: 18px 14px !important; border-radius: 22px; }
+  .sm-dashboard-grid, .sm-dashboard-columns { grid-template-columns: 1fr !important; }
+  .sm-dashboard-gauge { grid-column:auto !important; }
+  .sm-document-bar { padding: 11px 12px; }
+  .sm-document-name { max-width: 100%; font-size: 16px; }
   .sm-flip-grid { display:flex !important; grid-template-columns:none !important; gap:14px !important; overflow-x:auto; overscroll-behavior-x:contain; scroll-snap-type:x mandatory; padding:2px 4px 14px; }
   .sm-flip-grid > .sm-flip-card { flex:0 0 86vw; scroll-snap-align:center; }
+  .sm-flip-card, .sm-flip-inner { min-height: 270px !important; }
+  .stButton > button, .stDownloadButton > button { min-height: 52px !important; font-size: 15px !important; }
+  [data-testid="stAudio"] audio { width: 100% !important; min-height: 48px; }
+  .main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] { position:sticky !important; top:3rem; min-height:64px; padding:7px 5px !important; gap:5px !important; border-radius:0 0 17px 17px; }
+  .main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { min-height:48px; padding:9px 5px !important; font-size:12px !important; border-radius:12px; }
+  .main [data-testid="stTabs"]:not(:has(.sm-parent-nav-heading)) > div[data-baseweb="tab-list"] { position:fixed !important; left:0; right:0; bottom:0; top:auto !important; z-index:1000; padding:6px 4px !important; border-radius:18px 18px 0 0 !important; overflow-x:auto; background:rgba(255,255,255,.92) !important; backdrop-filter:blur(12px); box-shadow:0 -8px 24px rgba(31,25,90,.16) !important; }
+  .stTabs [data-baseweb="tab"] { min-width: 78px; min-height: 46px; padding: 8px 10px !important; font-size: 11px !important; }
 }
 .sm-privacy-note { margin-top: 8px; padding: 10px 12px; border-radius: 12px; color: var(--ink-faint); background: rgba(79,70,229,.06); border: 1px solid rgba(79,70,229,.12); font-size: 11px; line-height: 1.45; }
 </style>
@@ -953,7 +860,7 @@ def ask_groq(prompt, system_message=None, max_tokens=2000):
             last_error = e 
             continue 
     st.error(f"Groq API error: {last_error}") 
-    return ""
+    return "" 
 
 
 def generate_speech_audio(text, language="en"):
@@ -1140,6 +1047,7 @@ def get_relevant_chunks(text, query, max_chunks=8, max_context_chars=12000):
 
         overlap = len(query_words & chunk_words)
 
+        # Small bonus for chunks containing important academic terms
         important_terms = {
             "definition",
             "concept",
@@ -1161,6 +1069,7 @@ def get_relevant_chunks(text, query, max_chunks=8, max_context_chars=12000):
 
         scored.append((score, i, chunk))
 
+    # Highest relevance first
     scored.sort(key=lambda x: x[0], reverse=True)
 
     selected = []
@@ -1177,10 +1086,12 @@ def get_relevant_chunks(text, query, max_chunks=8, max_context_chars=12000):
             selected.append((index, chunk))
             total_chars += len(chunk)
         else:
+            # Take only the portion that fits
             selected.append((index, chunk[:remaining]))
             total_chars += remaining
             break
 
+    # Restore original PDF order
     selected.sort(key=lambda x: x[0])
 
     return "\n\n".join(chunk for _, chunk in selected)
@@ -1236,6 +1147,13 @@ STUDY MATERIAL:
  
  
 # ============================================================ 
+# FLASHCARD GENERATION -- separate from MCQs on purpose. 
+# MCQ "correct answer" text is deliberately short (it's one of 
+# four options); a flashcard back needs a real explanation, so 
+# this uses its own prompt/schema instead of reusing MCQ output. 
+# ============================================================ 
+ 
+# ============================================================
 # FLASHCARD GENERATION -- visual artifacts + flip cards
 # ============================================================
 
@@ -1371,56 +1289,84 @@ def render_visual_artifact(card):
         f'<div class="sm-visual-title">{title}</div>'
     ]
 
+    # ---------------- DEFINITION ----------------
     if visual_type == "definition":
         core = items[0]
+
         pieces.append(
             '<div class="sm-visual-definition">'
             f'<div class="sm-visual-core">{core}</div>'
             '</div>'
         )
+
         if len(items) > 1:
             pieces.append('<div class="sm-visual-items">')
+
             for item in items[1:]:
-                pieces.append(f'<div class="sm-visual-item">• {item}</div>')
+                pieces.append(
+                    f'<div class="sm-visual-item">• {item}</div>'
+                )
+
             pieces.append('</div>')
 
+    # ---------------- PROCESS ----------------
     elif visual_type == "process":
         pieces.append('<div class="sm-process">')
+
         for index, item in enumerate(items):
             pieces.append(
-                f'<div class="sm-process-step">{index + 1}. {item}</div>'
+                f'<div class="sm-process-step">'
+                f'{index + 1}. {item}'
+                f'</div>'
             )
+
             if index < len(items) - 1:
                 pieces.append('<div class="sm-arrow">↓</div>')
+
         pieces.append('</div>')
 
+    # ---------------- COMPARISON ----------------
     elif visual_type == "comparison":
         left_items = []
         right_items = []
+
         for index, item in enumerate(items):
             if index % 2 == 0:
                 left_items.append(item)
             else:
                 right_items.append(item)
+
         pieces.append('<div class="sm-comparison">')
+
         pieces.append(
             '<div class="sm-comparison-column">'
             '<div class="sm-comparison-title">Concept A</div>'
         )
+
         for item in left_items:
-            pieces.append(f'<div class="sm-comparison-item">• {item}</div>')
+            pieces.append(
+                f'<div class="sm-comparison-item">• {item}</div>'
+            )
+
         pieces.append('</div>')
+
         pieces.append(
             '<div class="sm-comparison-column">'
             '<div class="sm-comparison-title">Concept B</div>'
         )
+
         for item in right_items:
-            pieces.append(f'<div class="sm-comparison-item">• {item}</div>')
+            pieces.append(
+                f'<div class="sm-comparison-item">• {item}</div>'
+            )
+
         pieces.append('</div>')
         pieces.append('</div>')
 
+    # ---------------- TIMELINE ----------------
     elif visual_type == "timeline":
         pieces.append('<div class="sm-timeline">')
+
         for index, item in enumerate(items):
             pieces.append(
                 '<div class="sm-timeline-item">'
@@ -1428,15 +1374,24 @@ def render_visual_artifact(card):
                 f'<div class="sm-timeline-text">{item}</div>'
                 '</div>'
             )
+
         pieces.append('</div>')
 
+    # ---------------- FORMULA ----------------
     elif visual_type == "formula":
         formula = "<br>".join(items)
-        pieces.append(f'<div class="sm-formula">{formula}</div>')
 
+        pieces.append(
+            f'<div class="sm-formula">{formula}</div>'
+        )
+
+    # ---------------- FACT ----------------
     elif visual_type == "fact":
         fact = " • ".join(items)
-        pieces.append(f'<div class="sm-fact">{fact}</div>')
+
+        pieces.append(
+            f'<div class="sm-fact">{fact}</div>'
+        )
 
     pieces.append('</div>')
 
@@ -1472,20 +1427,44 @@ def render_flashcards(cards):
             aria-label="Flashcard {i + 1}: {front}. Press space or enter to reveal the answer."
           >
 
+            <!-- FRONT -->
             <div class="sm-flip-front">
+
               <span class="sm-sr-only">Flashcard {i + 1}. Question: {front}. Press the spacebar or Enter to flip this card.</span>
+
               <div>
-                <div class="sm-quiz-topic">{topic}</div>
-                <div class="sm-flip-q">{front}</div>
+                <div class="sm-quiz-topic">
+                  {topic}
+                </div>
+
+                <div class="sm-flip-q">
+                  {front}
+                </div>
               </div>
-              <div class="sm-flip-hint">👆 Click to reveal visual answer</div>
+
+              <div class="sm-flip-hint">
+                👆 Click to reveal visual answer
+              </div>
+
             </div>
 
+            <!-- BACK -->
             <div class="sm-flip-back">
-              <div class="sm-flip-a-label">Visual Explanation</div>
+
+              <div class="sm-flip-a-label">
+                Visual Explanation
+              </div>
+
               {visual}
-              <div class="sm-flip-back-note">Based strictly on your uploaded study material.</div>
-              <div class="sm-flip-hint">👆 Click to flip back</div>
+
+              <div class="sm-flip-back-note">
+                Based strictly on your uploaded study material.
+              </div>
+
+              <div class="sm-flip-hint">
+                👆 Click to flip back
+              </div>
+
             </div>
 
           </label>
@@ -1606,6 +1585,7 @@ REVIEW_STATE_FILE = "flashcard_review_state.json"
 
 
 def privacy_secret():
+    """Read a deployment secret without ever displaying it in the UI."""
     return os.environ.get("STUDIENT_ENCRYPTION_KEY") or os.environ.get("APP_SECRET") or ""
 
 
@@ -1627,7 +1607,7 @@ def read_private_json(path, default):
             try:
                 raw = cipher.decrypt(raw)
             except InvalidToken:
-                pass
+                pass  # Support legacy unencrypted files during migration.
         return json.loads(raw.decode("utf-8"))
     except Exception:
         return default
@@ -2054,6 +2034,7 @@ if st.session_state.theme_mode == "Dark":
     .stApp { background:radial-gradient(circle at 8% 0%,rgba(79,70,229,.28),transparent 32%),radial-gradient(circle at 92% 4%,rgba(219,39,119,.20),transparent 30%),linear-gradient(160deg,#10152d,#17162f 55%,#21152f) !important; }
     section[data-testid="stSidebar"] { background:linear-gradient(180deg,rgba(15,23,42,.92),rgba(30,27,55,.9)) !important; }
     .sm-hero,.sm-card,.sm-feature,.sm-metric,.sm-document-bar { background:linear-gradient(145deg,rgba(30,41,75,.78),rgba(49,46,129,.42)) !important; border-color:rgba(148,163,184,.24) !important; }
+    .stTabs [data-baseweb="tab-list"] { background:rgba(30,41,75,.68) !important; }
     </style>
     """)
 if st.session_state.high_contrast:
@@ -2232,7 +2213,7 @@ if not st.session_state.pdf_text:
     st.stop() 
  
 # ============================================================ 
-# DOCUMENT HEADER 
+# DOCUMENT HEADER  (Words / Characters / Difficulty — restored) 
 # ============================================================ 
  
 html(f'<div class="sm-document-bar"><div class="sm-document-name"><span>📄 {st.session_state.document_name}</span><span style="font-size:11px; padding:5px 9px; border-radius:999px; background:rgba(79,70,229,.09); color:var(--accent1); vertical-align:middle;">{SUPPORTED_LABELS.get(st.session_state.document_type, "DOCUMENT")}</span></div><div class="sm-document-meta">Ready for active learning</div></div>') 
@@ -2261,15 +2242,15 @@ st.markdown("<br>", unsafe_allow_html=True)
 section_tabs = st.tabs(["📚 Study Desk", "🎨 AI Studio", "🧠 AI Learning"])
 tabs = [None] * 16
 with section_tabs[0]:
-    st.caption("Read, ask, and understand your uploaded workspace.")
+    html('<div class="sm-parent-nav-heading">📚 Study Desk <small>Read, ask, and understand your workspace</small></div>')
     desk_tabs = st.tabs(["📚 Summary", "🔍 Key Concepts", "💬 Ask Workspace"])
     tabs[0], tabs[6], tabs[15] = desk_tabs[0], desk_tabs[1], desk_tabs[2]
 with section_tabs[1]:
-    st.caption("Create active revision materials, practice, and track progress.")
+    html('<div class="sm-parent-nav-heading">🎨 AI Studio <small>Create, practice, and track progress</small></div>')
     studio_tabs = st.tabs(["🎴 Flashcards", "❓ MCQs", "📝 Questions", "📖 Long Questions", "🎯 Short Questions", "📊 Difficulty", "🧪 Practice Test", "📈 Analytics", "🧠 Mind Map"])
     tabs[3], tabs[2], tabs[1], tabs[4], tabs[5], tabs[7], tabs[8], tabs[9], tabs[10] = studio_tabs
 with section_tabs[2]:
-    st.caption("Use AI to plan, tutor, and generate exam-ready materials.")
+    html('<div class="sm-parent-nav-heading">🧠 AI Learning <small>Plan, tutor, and generate exam-ready materials</small></div>')
     learning_tabs = st.tabs(["🗓️ Study Plan", "🧑‍🏫 AI Tutor", "🧰 Study Materials", "📝 Sample Paper"])
     tabs[11], tabs[12], tabs[13], tabs[14] = learning_tabs
  
@@ -2292,6 +2273,9 @@ STUDY MATERIAL:
             st.session_state.summary_audio = None
             save_summary(st.session_state.document_name, result)
             st.rerun()
+            html(f'<div class="sm-answer"><div class="title">📚 AI Study Summary</div></div>') 
+            st.markdown(result) 
+            st.download_button("⬇️ Download summary as Markdown", result, file_name="studient-summary.md", mime="text/markdown", key="download_summary_markdown")
 
     if st.session_state.get("summary_text"):
         html('<div class="sm-answer"><div class="title">📚 AI Study Summary</div></div>')
@@ -2341,7 +2325,7 @@ STUDY MATERIAL:
             if questions_docx:
                 st.download_button("⬇️ Export questions as DOCX", questions_docx, file_name="studient-important-questions.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="export_important_docx")
  
-# ---------------- MCQS ---------------- 
+# ---------------- MCQS (interactive JSON, browsable) ---------------- 
 with tabs[2]: 
     st.header("❓ Multiple Choice Questions") 
     st.caption("Generate exam-style MCQs with answers and explanations.") 
@@ -2360,24 +2344,37 @@ with tabs[2]:
                 st.download_button("⬇️ Export MCQs as DOCX", mcq_docx, file_name="studient-mcqs.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="export_mcq_docx")
  
 # ---------------- FLASHCARDS ---------------- 
+# ---------------- FLASHCARDS ----------------
 with tabs[3]:
     st.header("🎴 Visual Flashcards")
-    st.caption("Click a card to flip it and reveal a visual explanation of the concept.")
+    st.caption(
+        "Click a card to flip it and reveal a visual explanation "
+        "of the concept."
+    )
 
     if st.button("✨ Generate Visual Flashcards", key="gen_flash"):
+
         with st.spinner("Creating your visual flashcards..."):
+
             flashcards = generate_flashcards(
                 st.session_state.pdf_text,
                 question_count,
                 difficulty
             )
+
         if flashcards:
             st.session_state.flashcards = flashcards
             st.session_state.flashcard_status = {str(i): "New" for i in range(len(flashcards))}
-            st.success(f"Created {len(flashcards)} visual flashcards!")
+            st.success(
+                f"Created {len(flashcards)} visual flashcards!"
+            )
             st.rerun()
+
         else:
-            st.warning("I couldn't create the flashcards. Please try generating them again.") 
+            st.warning(
+                "I couldn't create the flashcards. "
+                "Please try generating them again."
+            ) 
 
     if st.session_state.get("flashcards"):
         flashcards = st.session_state.flashcards
@@ -2486,7 +2483,7 @@ STUDY MATERIAL:
             html('<div class="sm-card"></div>') 
             st.markdown(result) 
  
-# ---------------- PRACTICE TEST ---------------- 
+# ---------------- PRACTICE TEST (graded, interactive) ---------------- 
 with tabs[8]: 
     st.header("🧪 Practice Test") 
     st.caption("Answers are hidden until you submit each question — no peeking.") 
