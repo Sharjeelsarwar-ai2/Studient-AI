@@ -800,6 +800,92 @@ html("""
   .stTabs [data-baseweb="tab"] { min-width: 78px; min-height: 46px; padding: 8px 10px !important; font-size: 11px !important; }
 }
 .sm-privacy-note { margin-top: 8px; padding: 10px 12px; border-radius: 12px; color: var(--ink-faint); background: rgba(79,70,229,.06); border: 1px solid rgba(79,70,229,.12); font-size: 11px; line-height: 1.45; }
+
+/* ============================================================
+   ROBUST TAB-BAR OVERRIDE — uses ARIA roles (stable across
+   Streamlit/BaseWeb versions) instead of internal data-testid /
+   data-baseweb attribute names, which can be renamed between
+   releases and silently stop matching. This block wins the
+   cascade (declared last, !important) regardless of which
+   internal markup this Streamlit build actually emits.
+   ============================================================ */
+div[data-testid="stTabs"] [role="tablist"],
+.stTabs [role="tablist"],
+[data-baseweb="tab-list"] {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  width: 100% !important;
+  gap: 0 !important;
+  padding: 0 !important;
+  margin: 6px 0 22px !important;
+  border-radius: 18px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  background: rgba(255,255,255,.68) !important;
+  border: 1px solid rgba(255,255,255,.8) !important;
+  box-shadow: 0 10px 26px rgba(31,25,90,.12) !important;
+  backdrop-filter: blur(18px) !important;
+  -webkit-backdrop-filter: blur(18px) !important;
+}
+div[data-testid="stTabs"] [role="tablist"] [role="tab"],
+.stTabs [role="tablist"] [role="tab"],
+[data-baseweb="tab-list"] [data-baseweb="tab"] {
+  flex: 1 1 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  min-height: 50px !important;
+  padding: 13px 14px !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  border: none !important;
+  border-right: 1px solid rgba(124,58,237,.10) !important;
+  font-weight: 700 !important;
+  font-size: 14px !important;
+  color: var(--ink-soft) !important;
+  white-space: nowrap !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+div[data-testid="stTabs"] [role="tablist"] [role="tab"]:last-child,
+.stTabs [role="tablist"] [role="tab"]:last-child,
+[data-baseweb="tab-list"] [data-baseweb="tab"]:last-child { border-right: none !important; }
+
+div[data-testid="stTabs"] [role="tab"][aria-selected="true"],
+.stTabs [role="tab"][aria-selected="true"],
+[data-baseweb="tab"][aria-selected="true"] {
+  color: #ffffff !important;
+  background: linear-gradient(135deg, var(--accent1), var(--accent2), var(--accent4)) !important;
+  box-shadow: inset 0 0 0 9999px rgba(0,0,0,0) !important;
+}
+
+/* Kill any stray underline / highlight strip Streamlit renders beneath the tab row */
+[data-baseweb="tab-highlight"],
+[data-baseweb="tab-border"],
+[role="tablist"] ~ div[style*="position"] { display: none !important; height: 0 !important; }
+
+/* Give the OUTER 3-way section bar (the one carrying our purple banner right after it)
+   a taller, bolder treatment so it reads as primary navigation. Scoped with :has() as a
+   progressive enhancement only — the flush/no-gap fix above already applies everywhere
+   even if :has() isn't supported. */
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) [role="tablist"] {
+  position: sticky !important;
+  top: 3.1rem !important;
+  z-index: 40 !important;
+  min-height: 62px !important;
+}
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) [role="tablist"] [role="tab"] {
+  min-height: 62px !important;
+  padding: 16px 20px !important;
+  font-size: 17px !important;
+  font-weight: 800 !important;
+}
+@media (max-width: 700px) {
+  div[data-testid="stTabs"] [role="tablist"] [role="tab"],
+  .stTabs [role="tablist"] [role="tab"],
+  [data-baseweb="tab-list"] [data-baseweb="tab"] { font-size: 12px !important; padding: 10px 6px !important; }
+}
 </style>
 """)
  
