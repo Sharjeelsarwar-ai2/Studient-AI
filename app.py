@@ -772,12 +772,6 @@ html("""
 .sm-parent-nav-heading { display:flex; align-items:center; gap:12px; margin:10px 0 4px; padding:12px 16px; border-radius:16px; color:#fff; background:linear-gradient(110deg,var(--accent1),var(--accent2),var(--accent4)); box-shadow:0 8px 20px rgba(79,70,229,.2); font-size:16px; font-weight:800; letter-spacing:.1px; }
 .sm-parent-nav-heading small { opacity:.82; font-size:11px; font-weight:600; }
 .sm-child-nav-label { display:flex; align-items:center; gap:8px; margin:4px 0 -2px 12px; padding-left:10px; border-left:3px solid var(--accent3); color:var(--ink-faint); font-size:10px; font-weight:850; letter-spacing:.8px; text-transform:uppercase; }
-/* The outer tabs contain the section banners; make them the primary full-width navigation. */
-.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] { display:flex !important; width:100%; min-height:76px; padding:10px !important; gap:10px !important; position:sticky !important; top:3.15rem; z-index:40; border-radius:0 0 24px 24px; background:linear-gradient(105deg,rgba(224,231,255,.96),rgba(255,255,255,.92) 50%,rgba(253,242,255,.96)) !important; border-bottom:1px solid rgba(124,58,237,.18); box-shadow:0 10px 26px rgba(31,25,90,.14) !important; }
-.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { flex:1 1 0; justify-content:center; min-height:56px; padding:14px 24px !important; border-radius:17px; font-size:18px !important; font-weight:800; color:var(--ink-soft); }
-.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] [aria-selected="true"] { color:#fff !important; background:linear-gradient(135deg,var(--accent1),var(--accent2),var(--accent4)) !important; box-shadow:0 9px 20px rgba(79,70,229,.28) !important; }
-.main [data-testid="stTabs"]:not(:has(.sm-parent-nav-heading)) > div[data-baseweb="tab-list"] { position:relative !important; top:auto !important; min-height:42px; margin:8px 0 20px; padding:5px 8px !important; gap:3px !important; border-radius:15px; background:rgba(255,255,255,.40) !important; box-shadow:none !important; }
-.main [data-testid="stTabs"]:not(:has(.sm-parent-nav-heading)) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { min-height:36px; padding:7px 13px !important; border-radius:10px; font-size:12px !important; font-weight:650; }
 @media (max-width: 700px) {
   .main .block-container { padding: .85rem .7rem 5.5rem !important; }
   .sm-hero { margin: 0 -2px 16px; padding: 32px 18px 28px !important; }
@@ -791,9 +785,6 @@ html("""
   .sm-flip-card, .sm-flip-inner { min-height: 270px !important; }
   .stButton > button, .stDownloadButton > button { min-height: 52px !important; font-size: 15px !important; }
   [data-testid="stAudio"] audio { width: 100% !important; min-height: 48px; }
-  .main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] { position:sticky !important; top:3rem; min-height:64px; padding:7px 5px !important; gap:5px !important; border-radius:0 0 17px 17px; }
-  .main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { min-height:48px; padding:9px 5px !important; font-size:12px !important; border-radius:12px; }
-  .main [data-testid="stTabs"]:not(:has(.sm-parent-nav-heading)) > div[data-baseweb="tab-list"] { position:fixed !important; left:0; right:0; bottom:0; top:auto !important; z-index:1000; padding:6px 4px !important; border-radius:18px 18px 0 0 !important; overflow-x:auto; background:rgba(255,255,255,.92) !important; backdrop-filter:blur(12px); box-shadow:0 -8px 24px rgba(31,25,90,.16) !important; }
   .stTabs [data-baseweb="tab"] { min-width: 78px; min-height: 46px; padding: 8px 10px !important; font-size: 11px !important; }
 }
 .sm-privacy-note { margin-top: 8px; padding: 10px 12px; border-radius: 12px; color: var(--ink-faint); background: rgba(79,70,229,.06); border: 1px solid rgba(79,70,229,.12); font-size: 11px; line-height: 1.45; }
@@ -1168,7 +1159,9 @@ def source_sections(text):
 def generate_comprehensive_summary(text, detail_level="Detailed", focus="", progress=None):
     """Summarize every source section, then synthesize a complete study guide."""
     sections = source_sections(text)
-    batch_size = 5 if any("[SLIDE " in section for section in sections) else 3
+    # Exam-focused mode is optimized for faster revision: fewer, larger map passes
+    # still cover every slide, while detailed mode keeps smaller teaching batches.
+    batch_size = (9 if detail_level == "Exam-focused" else 7) if any("[SLIDE " in section for section in sections) else 4
     batches = ["\n\n".join(sections[i:i + batch_size]) for i in range(0, len(sections), batch_size)]
     style = {
         "Brief": "Keep the final guide compact but cover every major topic, definition, formula, and process.",
@@ -1186,7 +1179,7 @@ Return structured markdown notes only.
 
 SOURCE BATCH:
 {batch[:14000]}"""
-        note = ask_groq(prompt, max_tokens=2200)
+        note = ask_groq(prompt, max_tokens=1500 if detail_level == "Exam-focused" else 1900)
         if note:
             notes.append(f"### Source batch {index}\n{note}")
         if progress:
@@ -1213,10 +1206,10 @@ Use this structure:
 Use polished markdown with headings, tables where useful, bullets, bold terms, and numbered workflow blocks. For each workflow use: **Purpose**, **Inputs**, **Step-by-step operation**, **Output**, **Why it matters**, and **Common failure or exam trap**. For formulas use: **Formula**, **Variables**, **Units**, **Meaning**, and **Example/use case**. Ground every claim in the extracted notes; mark missing details rather than guessing.
 
 SOURCE-BATCH NOTES:
-{evidence[:30000]}"""
+{evidence[:24000]}"""
     if progress:
         progress.progress(0.98, text="Synthesizing the complete study guide...")
-    return ask_groq(final_prompt, max_tokens=6000)
+    return ask_groq(final_prompt, max_tokens=4800 if detail_level == "Exam-focused" else 5600)
  
  
 # ============================================================ 
