@@ -2398,7 +2398,6 @@ with tabs[0]:
             progress.progress(1.0, text="Complete study guide ready")
         if result: 
             st.session_state.summary_text = result
-            st.session_state.summary_detail = summary_detail
             st.session_state.summary_audio = None
             save_summary(st.session_state.document_name, result)
             st.rerun()
