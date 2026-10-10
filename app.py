@@ -762,13 +762,13 @@ html("""
 [data-testid="stToolbar"], [data-testid="stStatusWidget"] { backdrop-filter:blur(10px) !important; -webkit-backdrop-filter:blur(10px) !important; }
 .sm-card, .sm-dashboard, .sm-feature, .sm-metric, .sm-document-bar, .sm-progress-dashboard { will-change:auto !important; }
 /* NAVIGATION HIERARCHY: large fixed parent sections, compact child tabs */
-.main [data-testid="stTabs"]:first-of-type { margin-top:-10px; }
-.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] { display:flex !important; position:sticky !important; top:3.15rem; z-index:30; width:100%; min-height:68px; padding:0 !important; gap:0 !important; border-radius:28px; overflow:hidden; background:rgba(255,255,255,.70) !important; border:1px solid rgba(255,255,255,.82); box-shadow:0 10px 24px rgba(31,25,90,.12) !important; }
-.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] [data-baseweb="tab"] { flex:1 1 0; justify-content:center; min-height:68px; padding:12px 25px !important; border-radius:0; border-right:1px solid rgba(100,116,139,.16); font-size:17px !important; font-weight:750; letter-spacing:.1px; }
-.main [data-testid="stTabs"]:first-of-type > div[data-baseweb="tab-list"] [aria-selected="true"] { color:#fff !important; background:linear-gradient(135deg,var(--accent1),var(--accent2),var(--accent4)) !important; box-shadow:0 8px 18px rgba(79,70,229,.28) !important; }
-.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] { display:flex !important; position:relative !important; top:auto !important; z-index:1; margin:8px 0 20px; padding:0 !important; gap:0 !important; border-radius:22px; overflow:hidden; background:rgba(255,255,255,.62) !important; border:1px solid rgba(255,255,255,.82); box-shadow:none !important; }
-.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { flex:1 1 0; justify-content:center; min-height:58px; padding:8px 14px !important; border-radius:0; border-right:1px solid rgba(100,116,139,.14); color:var(--ink-soft); font-size:14px !important; font-weight:650; }
-.main [data-testid="stTabs"]:not(:first-of-type) > div[data-baseweb="tab-list"] [aria-selected="true"] { color:var(--accent1) !important; background:rgba(79,70,229,.11) !important; box-shadow:none !important; }
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) { margin-top:-10px; }
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] { display:flex !important; position:sticky !important; top:3.15rem; z-index:30; width:100%; min-height:68px; padding:0 !important; gap:0 !important; border-radius:28px; overflow:hidden; background:rgba(255,255,255,.70) !important; border:1px solid rgba(255,255,255,.82); box-shadow:0 10px 24px rgba(31,25,90,.12) !important; }
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { flex:1 1 0; justify-content:center; min-height:68px; padding:12px 25px !important; border-radius:0; border-right:1px solid rgba(100,116,139,.16); font-size:17px !important; font-weight:750; letter-spacing:.1px; }
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] [aria-selected="true"] { color:#fff !important; background:linear-gradient(135deg,var(--accent1),var(--accent2),var(--accent4)) !important; box-shadow:0 8px 18px rgba(79,70,229,.28) !important; }
+.main [data-testid="stTabs"]:not(:has(.sm-parent-nav-heading)) > div[data-baseweb="tab-list"] { display:flex !important; position:relative !important; top:auto !important; z-index:1; margin:8px 0 20px; padding:0 !important; gap:0 !important; border-radius:22px; overflow:hidden; background:rgba(255,255,255,.62) !important; border:1px solid rgba(255,255,255,.82); box-shadow:none !important; }
+.main [data-testid="stTabs"]:not(:has(.sm-parent-nav-heading)) > div[data-baseweb="tab-list"] [data-baseweb="tab"] { flex:1 1 0; justify-content:center; min-height:58px; padding:8px 14px !important; border-radius:0; border-right:1px solid rgba(100,116,139,.14); color:var(--ink-soft); font-size:14px !important; font-weight:650; }
+.main [data-testid="stTabs"]:not(:has(.sm-parent-nav-heading)) > div[data-baseweb="tab-list"] [aria-selected="true"] { color:var(--accent1) !important; background:rgba(79,70,229,.11) !important; box-shadow:none !important; }
 .sm-parent-nav-heading { display:flex; align-items:center; gap:12px; margin:10px 0 4px; padding:12px 16px; border-radius:16px; color:#fff; background:linear-gradient(110deg,var(--accent1),var(--accent2),var(--accent4)); box-shadow:0 8px 20px rgba(79,70,229,.2); font-size:16px; font-weight:800; letter-spacing:.1px; }
 .sm-parent-nav-heading small { opacity:.82; font-size:11px; font-weight:600; }
 .sm-child-nav-label { display:flex; align-items:center; gap:8px; margin:4px 0 -2px 12px; padding-left:10px; border-left:3px solid var(--accent3); color:var(--ink-faint); font-size:10px; font-weight:850; letter-spacing:.8px; text-transform:uppercase; }
@@ -1060,6 +1060,35 @@ def clean_text(text):
     text = re.sub(r"[ \t]+", " ", text) 
     text = re.sub(r"\n{3,}", "\n\n", text) 
     return text.strip() 
+
+
+def make_formulas_readable(text):
+    """Replace common LaTeX fragments with readable plain-text study notation."""
+    if not text:
+        return text
+    text = re.sub(r"\\frac\{([^{}]+)\}\{([^{}]+)\}", r"(\1 / \2)", text)
+    text = re.sub(r"\\text\{([^{}]+)\}", r"\1", text)
+    text = re.sub(r"([A-Za-z])_\{([^{}]+)\}", r"\1_\2", text)
+    text = re.sub(r"([A-Za-z])\^\{([^{}]+)\}", r"\1^\2", text)
+    text = text.replace("\\times", " × ").replace("\\cdot", " · ")
+    text = text.replace("\\leq", " ≤ ").replace("\\geq", " ≥ ").replace("\\rightarrow", " → ")
+    text = text.replace("\\approx", " ≈ ").replace("\\Delta", "Δ").replace("\\alpha", "α").replace("\\beta", "β")
+    text = text.replace("\\", "")
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def remove_nonacademic_topic_rows(text):
+    """Keep licensing and lecture-administration metadata out of topic tables."""
+    blocked = re.compile(r"slide[- ]use|copyright notice|copyright|chapter goal|chapter roadmap|lecture roadmap|publisher information|author information", re.I)
+    kept = []
+    for line in (text or "").splitlines():
+        # Only remove lines that are clearly topic/table rows, not a sentence
+        # that happens to mention copyright in a source-integrity note.
+        if blocked.search(line) and ("|" in line or line.lstrip().startswith(("-", "*", "1.", "2.", "3."))):
+            continue
+        kept.append(line)
+    return "\n".join(kept).strip()
  
  
 def chunk_text(text, chunk_size=7000): 
@@ -1172,7 +1201,7 @@ def generate_comprehensive_summary(text, detail_level="Detailed", focus="", prog
     for index, batch in enumerate(batches, 1):
         prompt = f"""You are building reliable study notes from source sections {index} of {len(batches)}.
 Extract all meaningful topics and facts in this batch. Preserve slide/page order and labels.
-For each topic include: topic name, accurate definition, purpose, intuitive explanation, key properties, formulas with variables and units when present, examples, and likely exam confusion.
+For each academic topic include: topic name, accurate definition, purpose, intuitive explanation, key properties, formulas with variables and units when present, examples, and likely exam confusion. Exclude slide-use/licensing policies, copyright notices, author or publisher information, lecture roadmaps, chapter goals, decorative headings, and other administrative metadata from the topic explanations unless they contain a substantive networking concept.
 For every process, protocol, algorithm, mechanism, architecture flow, or workflow, explain it as a numbered sequence: starting conditions or inputs -> each step in order -> decisions/branches -> intermediate state or data movement -> final output/result. Also explain why each step happens, what problem it solves, and what can go wrong. Never reduce a process to a one-line label.
 Do not invent information. If a formula, definition, or visual-only claim is not readable, say 'not stated in the extracted text'.
 Return structured markdown notes only.
@@ -1194,7 +1223,7 @@ SOURCE BATCH:
 Use all source-batch notes below. Do not drop topics merely because they appeared in a later batch. Merge duplicates, keep important distinctions, and explicitly cover the full material. The source batches are complete; never write phrases such as “later slides not provided” or “remaining slides missing”, and never invent slide ranges that are not present in the source.
 Use this structure:
 1. Course/lecture overview
-2. Complete topic map (every major topic in source order)
+2. Complete academic topic map (every major networking topic in source order; omit administrative slide material)
 3. Topic explanations with clear definitions and intuition
 4. Protocols, architectures, processes, and step-by-step mechanisms
 5. All formulas/equations, with every symbol, unit, and when-to-use explanation
@@ -1203,14 +1232,15 @@ Use this structure:
 8. Quiz-ready facts and likely questions
 9. Final one-page rapid revision sheet
 
-For Brief mode, keep the response concise: give one or two lines per topic, include a compact definition or purpose, list formulas by name, and finish with “Suggested next topics to explain”. Do not expand every workflow yet. For Detailed or Exam-focused mode, expand the mechanisms fully.
+For Brief mode, keep the response concise: give one or two lines per academic topic, include a compact definition or purpose, list formulas by name, and finish with “Suggested next topics to explain”. Do not expand every workflow yet. For Detailed or Exam-focused mode, expand the mechanisms fully.
 Use polished markdown with headings, tables where useful, bullets, bold terms, and numbered workflow blocks. For expanded workflows use: **Purpose**, **Inputs**, **Step-by-step operation**, **Output**, **Why it matters**, and **Common failure or exam trap**. For formulas use: **Formula**, **Variables**, **Units**, **Meaning**, and **Example/use case**. Ground every claim in the extracted notes; mark genuinely unreadable details rather than guessing.
 
 SOURCE-BATCH NOTES:
 {evidence[:24000]}"""
     if progress:
         progress.progress(0.98, text="Synthesizing the complete study guide...")
-    return ask_groq(final_prompt, max_tokens=3000 if detail_level == "Brief" else 4800 if detail_level == "Exam-focused" else 5600)
+    result = ask_groq(final_prompt, max_tokens=3000 if detail_level == "Brief" else 4800 if detail_level == "Exam-focused" else 5600)
+    return remove_nonacademic_topic_rows(make_formulas_readable(result))
 
 
 def explain_next_topic(topic):
@@ -1224,7 +1254,7 @@ Use the source material as the primary authority. Include:
 2. Why the topic matters
 3. Inputs and assumptions
 4. Step-by-step process, protocol, mechanism, or workflow if applicable
-5. Formula(s), variables, and a small worked example if present
+5. Formula(s), variables, and a small worked example if present. Write formulas in readable plain text, for example: d_trans = L / R, not LaTeX commands such as \frac{{L}}{{R}}.
 6. A comparison or common confusion
 7. If the request asks for a quiz, provide exactly the requested number of questions with four options, correct answers, and explanations. Otherwise provide three quick-check questions with short answers.
 
@@ -1232,7 +1262,7 @@ Do not discuss unrelated topics or claim that slides are missing. If the extract
 
 SOURCE CONTEXT:
 {context}"""
-    return ask_groq(prompt, max_tokens=2600)
+    return remove_nonacademic_topic_rows(make_formulas_readable(ask_groq(prompt, max_tokens=2600)))
  
  
 # ============================================================ 
