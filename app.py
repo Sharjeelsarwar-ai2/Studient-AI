@@ -884,6 +884,16 @@ def clean_speech_text(text):
     return text.strip()
 
 
+def clean_video_narration(text):
+    """Prepare only teacher words for TTS while preserving meaningful formula numbers."""
+    text = clean_speech_text(text)
+    text = re.sub(r"\b\d{1,2}:\d{2}(?:\s*[-–—]\s*\d{1,2}:\d{2})?\b", " ", text)
+    text = re.sub(r"\b(?:video title|learning objective|approximate duration|target audience|scene-by-scene storyboard|visual treatment|transition|recap takeaways|formula cards)\s*:?", " ", text, flags=re.I)
+    text = re.sub(r"[\U0001F000-\U0001FAFF\u2600-\u27BF]", " ", text)
+    text = text.replace("—", ", ").replace("–", "-")
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def prepare_speech_text(text, language_name):
     """Clean English summaries and translate them for non-English voices."""
     cleaned = clean_speech_text(text)
@@ -1281,14 +1291,14 @@ Visual style: {visual_style}
 
 Return polished markdown containing:
 1. Video title and learning objective
-2. Approximate duration and audience
-3. A concise narration script in the requested spoken language ({language})
+2. Approximate duration and audience. The finished narration must be 6–9 minutes and never over 10 minutes.
+3. A teacher-led narration script in the requested spoken language ({language}), limited to about 900–1100 spoken words. Start by defining the key concepts, then explain how they connect, then walk through one or two mechanisms or examples, and finish with a recap. Write only words the teacher should say in this section: no timestamps, emojis, markdown headings, labels, stage directions, metadata, or visual instructions.
 4. A scene-by-scene storyboard with scene duration, narration, on-screen text, visual treatment, and transition
 5. Step-by-step visual treatment for every process, protocol, mechanism, or workflow
 6. Formula cards with readable plain-text equations such as d_trans = L / R, plus variable meanings
 7. Three recap takeaways and three quiz questions
 
-Keep on-screen text short and readable. Use diagrams or flow arrows for processes, comparison cards for contrasts, and animated formula reveals where useful. Exclude copyright notices, slide-use policy, lecture administration, and irrelevant metadata. Do not invent facts; state when the uploaded material does not provide a detail.
+Keep on-screen text short and readable. Use diagrams or flow arrows for processes, comparison cards for contrasts, animated formula reveals, and a layered stack visual where useful. The teacher must explain ideas rather than read a list of slide titles. Exclude copyright notices, slide-use policy, lecture administration, timestamps, emojis, and irrelevant metadata from narration. Do not invent facts; state when the uploaded material does not provide a detail.
 
 WORKSPACE CONTEXT:
 {context}"""
@@ -1309,7 +1319,7 @@ def _ffmpeg_atempo_filter(rate):
     return ",".join(f"atempo={factor:.4f}" for factor in factors)
 
 
-def _render_video_slide(path, title, body, visual_style):
+def _render_video_slide(path, title, body, visual_style, scene_index=1):
     """Render a readable study card; visual labels stay English for clarity across voices."""
     if Image is None:
         return False
@@ -1333,6 +1343,41 @@ def _render_video_slide(path, title, body, visual_style):
     except Exception:
         title_font = body_font = small_font = ImageFont.load_default()
     draw.text((78, 78), title[:58], fill=accent, font=title_font)
+    # A visual teaching anchor keeps the video from becoming a narrated text document.
+    if scene_index == 2:
+        nodes = [(150, 350), (390, 250), (390, 450), (650, 350), (910, 250), (1100, 400)]
+        for start, end in zip(nodes, nodes[1:]):
+            draw.line((*start, *end), fill=accent, width=8)
+        for x, y in nodes:
+            draw.ellipse((x - 28, y - 28, x + 28, y + 28), fill=accent, outline=(255, 255, 255), width=4)
+        draw.text((110, 535), "hosts  →  access network  →  routers  →  destination", fill=text_color if 'text_color' in locals() else accent, font=small_font)
+    elif scene_index == 3:
+        layers = [(100, "Application", (244, 114, 182)), (100, "Transport", (96, 165, 250)), (100, "Network", (52, 211, 153)), (100, "Link", (251, 191, 36)), (100, "Physical", (148, 163, 184))]
+        y_layer = 205
+        for _, label, color in layers:
+            draw.rounded_rectangle((150, y_layer, 650, y_layer + 62), radius=14, fill=color)
+            draw.text((185, y_layer + 14), label, fill=(15, 23, 42), font=body_font)
+            y_layer += 72
+        draw.text((760, 330), "message", fill=accent, font=body_font)
+        draw.line((760, 380, 1060, 380), fill=accent, width=7)
+        draw.polygon([(1060, 380), (1028, 365), (1028, 395)], fill=accent)
+        draw.text((760, 420), "encapsulation", fill=text_color if 'text_color' in locals() else accent, font=small_font)
+    elif scene_index == 4:
+        draw.rounded_rectangle((120, 250, 360, 430), radius=18, outline=accent, width=6)
+        draw.text((175, 325), "L bits", fill=accent, font=body_font)
+        draw.line((400, 340, 850, 340), fill=accent, width=7)
+        draw.polygon([(850, 340), (818, 325), (818, 355)], fill=accent)
+        draw.text((455, 270), "link rate R", fill=accent, font=body_font)
+        draw.text((455, 395), "d_trans = L / R", fill=text_color if 'text_color' in locals() else accent, font=body_font)
+        draw.text((455, 450), "transmission delay", fill=text_color if 'text_color' in locals() else accent, font=small_font)
+    elif scene_index == 5:
+        for i, label in enumerate(["Key idea", "Process", "Example", "Recap"]):
+            x = 120 + i * 270
+            draw.rounded_rectangle((x, 300, x + 200, 410), radius=18, fill=accent)
+            draw.text((x + 22, 335), label, fill=(255, 255, 255), font=small_font)
+            if i < 3:
+                draw.line((x + 205, 355, x + 260, 355), fill=accent, width=6)
+                draw.polygon([(x + 260, 355), (x + 240, 345), (x + 240, 365)], fill=accent)
     wrapped = textwrap.wrap(re.sub(r"[*_#`]", "", body), width=62)[:12]
     y = 165
     text_color = (241, 245, 249) if sum(background) < 180 else (31, 41, 55)
@@ -1342,6 +1387,20 @@ def _render_video_slide(path, title, body, visual_style):
     draw.text((82, height - 76), "Studient AI · Video Overview", fill=accent, font=small_font)
     image.save(path, format="PNG")
     return True
+
+
+def _video_teacher_narration(plan, config):
+    """Turn a storyboard into spoken-only teaching narration, capped for a short video."""
+    language = config.get("language", "English")
+    prompt = f"""Extract or rewrite the teacher narration from the video plan below.
+Return ONLY the words the teacher should speak. Do not include a title, headings, timestamps, scene labels, emojis, bullets, numbering, visual directions, audience notes, copyright information, or calls to download anything.
+Teach in this order: define the key concepts first; connect them into one mental model; explain the most important process or mechanism step by step; explain one formula or example if present; finish with three short recap ideas. Sound like a patient university instructor, using transitions and intuition instead of reading a list.
+The narration must be about 900–1100 words, suitable for a 6–9 minute video and never more than 10 minutes. Use plain readable spoken language. Keep networking terms and formulas accurate.
+Requested language: {language}
+VIDEO PLAN:
+{plan[:26000]}"""
+    narration = ask_groq(prompt, max_tokens=2600)
+    return clean_video_narration(narration) if narration else clean_video_narration(plan)
 
 
 def render_video_overview_mp4(plan, config, speaking_rate=1.0):
@@ -1356,7 +1415,7 @@ def render_video_overview_mp4(plan, config, speaking_rate=1.0):
     language = config.get("language", "English")
     topic = config.get("topic", "Full course")
     visual_style = config.get("visual_style", "Clean academic slides")
-    spoken = clean_speech_text(plan)
+    spoken = clean_video_narration(_video_teacher_narration(plan, config))
     if language == "Urdu-English mix":
         bilingual_prompt = f"Rewrite this narration in natural bilingual Urdu-English for a Pakistani university student. Explain connective sentences in Urdu but retain Computer Networks terms, formulas, and protocol names in English. Return spoken narration only:\n\n{spoken[:9000]}"
         spoken = clean_speech_text(ask_groq(bilingual_prompt, max_tokens=4200)) or spoken
@@ -1366,24 +1425,30 @@ def render_video_overview_mp4(plan, config, speaking_rate=1.0):
         output_path = os.path.join(workdir, "studient-video-overview.mp4")
         tts_code = {"English": "en", "Urdu": "ur", "Urdu-English mix": "ur", "Hindi": "hi"}.get(language, "en")
         try:
-            gTTS(text=spoken[:12000], lang=tts_code, slow=False).save(narration_path)
+            gTTS(text=spoken[:11000], lang=tts_code, slow=False).save(narration_path)
             subprocess.run([ffmpeg, "-y", "-i", narration_path, "-filter:a", _ffmpeg_atempo_filter(speaking_rate), "-c:a", "libmp3lame", audio_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             duration_probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_path], check=True, capture_output=True, text=True)
             audio_duration = max(8.0, float(duration_probe.stdout.strip()))
+            # Keep the final lesson under ten minutes without abruptly cutting speech.
+            if audio_duration > 540:
+                fast_rate = min(2.0, speaking_rate * audio_duration / 540.0)
+                subprocess.run([ffmpeg, "-y", "-i", narration_path, "-filter:a", _ffmpeg_atempo_filter(fast_rate), "-c:a", "libmp3lame", audio_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                duration_probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_path], check=True, capture_output=True, text=True)
+                audio_duration = min(540.0, float(duration_probe.stdout.strip()))
         except Exception as exc:
             st.error(f"Could not create narration audio: {exc}")
             return None
         slide_texts = [
-            ("Video overview", f"{topic}\n{config.get('format', 'Explainer lesson')}"),
-            ("Core concepts", "Definitions, architecture, terminology, and the most important ideas from the workspace."),
-            ("Processes and mechanisms", "Follow the inputs, ordered steps, decisions, data movement, and final output."),
-            ("Formulas and examples", "Readable equations, variable meanings, units, and a worked networking example."),
-            ("Exam recap", "Three key takeaways, common confusions, and practice questions for active recall."),
+            ("The big picture", f"{topic}\nFirst define the key ideas, then connect them into one mental model."),
+            ("How the network fits together", "Hosts connect through access networks and routers forward data across the network core."),
+            ("Layers and encapsulation", "Each layer provides a service and adds information as data moves toward the wire."),
+            ("Mechanism and formula", "A packet is transmitted across a link. Transmission delay: d_trans = L / R."),
+            ("Connect, apply, recap", "Follow the explanation, test the idea with an example, then recall the three key takeaways."),
         ]
         slide_paths = []
         for index, (title, body) in enumerate(slide_texts, 1):
             path = os.path.join(workdir, f"slide-{index:02d}.png")
-            _render_video_slide(path, title, body, visual_style)
+            _render_video_slide(path, title, body, visual_style, index)
             slide_paths.append(path)
         per_slide = audio_duration / len(slide_paths)
         concat_path = os.path.join(workdir, "slides.txt")
