@@ -38,7 +38,10 @@ import zipfile
 import textwrap
 import base64
 import secrets
-import html as _html_escape_lib  # aliased: this file defines its own html() render helper below 
+import shutil
+import subprocess
+import tempfile
+import html as _html_escape_lib  # aliased: this file defines its own html() render helper below
 from io import BytesIO, StringIO
 import csv
 from datetime import datetime, date, timedelta
@@ -1263,6 +1266,139 @@ Do not discuss unrelated topics or claim that slides are missing. If the extract
 SOURCE CONTEXT:
 {context}"""
     return remove_nonacademic_topic_rows(make_formulas_readable(ask_groq(prompt, max_tokens=2600)))
+
+
+def generate_video_overview_plan(video_format, language, topic, custom_topic, visual_style):
+    """Create a NotebookLM-style narrated video storyboard grounded in the workspace."""
+    requested_topic = custom_topic.strip() if topic == "Custom topic" and custom_topic.strip() else topic
+    context_query = requested_topic if requested_topic != "Full course" else "all major academic networking topics definitions processes formulas"
+    context = get_relevant_chunks(st.session_state.pdf_text, context_query, max_chunks=12, max_context_chars=18000)
+    prompt = f"""Create a NotebookLM-style educational video overview plan grounded strictly in the uploaded Computer Networks study material.
+Format: {video_format}
+Spoken language: {language}
+Topic: {requested_topic}
+Visual style: {visual_style}
+
+Return polished markdown containing:
+1. Video title and learning objective
+2. Approximate duration and audience
+3. A concise narration script in the requested spoken language ({language})
+4. A scene-by-scene storyboard with scene duration, narration, on-screen text, visual treatment, and transition
+5. Step-by-step visual treatment for every process, protocol, mechanism, or workflow
+6. Formula cards with readable plain-text equations such as d_trans = L / R, plus variable meanings
+7. Three recap takeaways and three quiz questions
+
+Keep on-screen text short and readable. Use diagrams or flow arrows for processes, comparison cards for contrasts, and animated formula reveals where useful. Exclude copyright notices, slide-use policy, lecture administration, and irrelevant metadata. Do not invent facts; state when the uploaded material does not provide a detail.
+
+WORKSPACE CONTEXT:
+{context}"""
+    return remove_nonacademic_topic_rows(make_formulas_readable(ask_groq(prompt, max_tokens=5200)))
+
+
+def _ffmpeg_atempo_filter(rate):
+    """Build an FFmpeg atempo chain for rates outside a single filter's range."""
+    rate = max(0.5, min(2.0, float(rate)))
+    factors = []
+    while rate < 0.5:
+        factors.append(0.5)
+        rate /= 0.5
+    while rate > 2.0:
+        factors.append(2.0)
+        rate /= 2.0
+    factors.append(rate)
+    return ",".join(f"atempo={factor:.4f}" for factor in factors)
+
+
+def _render_video_slide(path, title, body, visual_style):
+    """Render a readable study card; visual labels stay English for clarity across voices."""
+    if Image is None:
+        return False
+    width, height = 1280, 720
+    palette = {
+        "Clean academic slides": ((238, 242, 255), (49, 46, 129)),
+        "Animated network diagrams": ((224, 242, 254), (14, 116, 144)),
+        "Studient glassmorphism": ((238, 232, 255), (124, 58, 237)),
+        "Whiteboard teaching": ((250, 250, 249), (31, 41, 55)),
+        "Dark lecture style": ((15, 23, 42), (129, 140, 248)),
+        "Minimal revision cards": ((248, 250, 252), (30, 41, 59)),
+    }
+    background, accent = palette.get(visual_style, palette["Clean academic slides"])
+    image = Image.new("RGB", (width, height), background)
+    draw = ImageDraw.Draw(image)
+    draw.rounded_rectangle((38, 38, width - 38, height - 38), radius=28, outline=accent, width=5)
+    try:
+        title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 44)
+        body_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 27)
+        small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
+    except Exception:
+        title_font = body_font = small_font = ImageFont.load_default()
+    draw.text((78, 78), title[:58], fill=accent, font=title_font)
+    wrapped = textwrap.wrap(re.sub(r"[*_#`]", "", body), width=62)[:12]
+    y = 165
+    text_color = (241, 245, 249) if sum(background) < 180 else (31, 41, 55)
+    for line in wrapped:
+        draw.text((86, y), line, fill=text_color, font=body_font)
+        y += 42
+    draw.text((82, height - 76), "Studient AI · Video Overview", fill=accent, font=small_font)
+    image.save(path, format="PNG")
+    return True
+
+
+def render_video_overview_mp4(plan, config, speaking_rate=1.0):
+    """Render storyboard cards plus TTS narration into a playable MP4 using FFmpeg."""
+    if gTTS is None:
+        st.error("Narration requires gTTS. Add gTTS to requirements.txt and redeploy.")
+        return None
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        st.error("Video rendering requires FFmpeg. Install it with the system packages in packages.txt.")
+        return None
+    language = config.get("language", "English")
+    topic = config.get("topic", "Full course")
+    visual_style = config.get("visual_style", "Clean academic slides")
+    spoken = clean_speech_text(plan)
+    if language == "Urdu-English mix":
+        bilingual_prompt = f"Rewrite this narration in natural bilingual Urdu-English for a Pakistani university student. Explain connective sentences in Urdu but retain Computer Networks terms, formulas, and protocol names in English. Return spoken narration only:\n\n{spoken[:9000]}"
+        spoken = clean_speech_text(ask_groq(bilingual_prompt, max_tokens=4200)) or spoken
+    with tempfile.TemporaryDirectory(prefix="studient-video-") as workdir:
+        narration_path = os.path.join(workdir, "narration.mp3")
+        audio_path = os.path.join(workdir, "narration-speed.mp3")
+        output_path = os.path.join(workdir, "studient-video-overview.mp4")
+        tts_code = {"English": "en", "Urdu": "ur", "Urdu-English mix": "ur", "Hindi": "hi"}.get(language, "en")
+        try:
+            gTTS(text=spoken[:12000], lang=tts_code, slow=False).save(narration_path)
+            subprocess.run([ffmpeg, "-y", "-i", narration_path, "-filter:a", _ffmpeg_atempo_filter(speaking_rate), "-c:a", "libmp3lame", audio_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            duration_probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_path], check=True, capture_output=True, text=True)
+            audio_duration = max(8.0, float(duration_probe.stdout.strip()))
+        except Exception as exc:
+            st.error(f"Could not create narration audio: {exc}")
+            return None
+        slide_texts = [
+            ("Video overview", f"{topic}\n{config.get('format', 'Explainer lesson')}"),
+            ("Core concepts", "Definitions, architecture, terminology, and the most important ideas from the workspace."),
+            ("Processes and mechanisms", "Follow the inputs, ordered steps, decisions, data movement, and final output."),
+            ("Formulas and examples", "Readable equations, variable meanings, units, and a worked networking example."),
+            ("Exam recap", "Three key takeaways, common confusions, and practice questions for active recall."),
+        ]
+        slide_paths = []
+        for index, (title, body) in enumerate(slide_texts, 1):
+            path = os.path.join(workdir, f"slide-{index:02d}.png")
+            _render_video_slide(path, title, body, visual_style)
+            slide_paths.append(path)
+        per_slide = audio_duration / len(slide_paths)
+        concat_path = os.path.join(workdir, "slides.txt")
+        with open(concat_path, "w", encoding="utf-8") as handle:
+            for path in slide_paths:
+                handle.write(f"file '{path}'\n")
+                handle.write(f"duration {per_slide:.4f}\n")
+            handle.write(f"file '{slide_paths[-1]}'\n")
+        try:
+            subprocess.run([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", concat_path, "-i", audio_path, "-vf", "scale=1280:720,format=yuv420p", "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-b:a", "128k", "-shortest", output_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            with open(output_path, "rb") as handle:
+                return handle.read()
+        except Exception as exc:
+            st.error(f"Could not render the MP4 video: {exc}")
+            return None
  
  
 # ============================================================ 
@@ -2189,6 +2325,7 @@ defaults = {
     "important_questions": None, "mcq_questions": None,
     "study_plan": None, "tutor_messages": [], "tutor_level": "Intermediate",
     "generated_material": None, "generated_material_type": "", "sample_paper": None,
+    "video_overview_plan": "", "video_overview_config": {}, "video_overview_mp4": None,
     "privacy_mode": False, "retention_days": 0,
 } 
 for k, v in defaults.items(): 
@@ -2423,7 +2560,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 # ============================================================
 
 section_tabs = st.tabs(["📚 Study Desk", "🎨 AI Studio", "🧠 AI Learning"])
-tabs = [None] * 16
+tabs = [None] * 17
 with section_tabs[0]:
     html('<div class="sm-parent-nav-heading">📚 Study Desk <small>Read, ask, and understand your workspace</small></div>')
     desk_tabs = st.tabs(["📚 Summary", "🔍 Key Concepts", "💬 Ask Workspace"])
@@ -2434,8 +2571,8 @@ with section_tabs[1]:
     tabs[3], tabs[2], tabs[1], tabs[4], tabs[5], tabs[7], tabs[8], tabs[9], tabs[10] = studio_tabs
 with section_tabs[2]:
     html('<div class="sm-parent-nav-heading">🧠 AI Learning <small>Plan, tutor, and generate exam-ready materials</small></div>')
-    learning_tabs = st.tabs(["🗓️ Study Plan", "🧑‍🏫 AI Tutor", "🧰 Study Materials", "📝 Sample Paper"])
-    tabs[11], tabs[12], tabs[13], tabs[14] = learning_tabs
+    learning_tabs = st.tabs(["🗓️ Study Plan", "🧑‍🏫 AI Tutor", "🧰 Study Materials", "📝 Sample Paper", "🎥 Video Overview"])
+    tabs[11], tabs[12], tabs[13], tabs[14], tabs[16] = learning_tabs
  
 # ---------------- SUMMARY ---------------- 
 with tabs[0]: 
@@ -3026,6 +3163,40 @@ with tabs[14]:
         html('<div class="sm-answer"><div class="title">📝 University sample paper with model answers</div></div>')
         st.markdown(st.session_state.sample_paper)
         st.download_button("⬇️ Download sample paper", st.session_state.sample_paper, file_name="studient-university-sample-paper.md", mime="text/markdown", key="download_sample_paper")
+
+# ---------------- VIDEO OVERVIEW ----------------
+with tabs[16]:
+    st.header("🎥 AI Video Overview")
+    st.caption("Create a NotebookLM-style narrated storyboard from your workspace before rendering the final study video.")
+    video_col1, video_col2 = st.columns(2)
+    with video_col1:
+        video_format = st.selectbox("Video format", ["Explainer lesson", "Quick revision", "Exam-cram overview", "Process walkthrough", "Topic comparison", "Quiz video"], key="video_format")
+        video_language = st.selectbox("Narration language", ["English", "Urdu", "Urdu-English mix", "Hindi"], key="video_language")
+        video_topic = st.selectbox("Topic", ["Full course", "Network edge and core", "Packet switching vs circuit switching", "Store-and-forward switching", "OSI and TCP/IP layers", "Custom topic"], key="video_topic")
+    with video_col2:
+        video_custom_topic = st.text_input("Custom topic", placeholder="Used when Topic is Custom topic", disabled=video_topic != "Custom topic", key="video_custom_topic")
+        video_visual_style = st.selectbox("Visual style", ["Clean academic slides", "Animated network diagrams", "Studient glassmorphism", "Whiteboard teaching", "Dark lecture style", "Minimal revision cards"], key="video_visual_style")
+        video_speaking_rate = st.slider("Speaking rate", min_value=0.75, max_value=1.25, value=1.0, step=0.05, help="1.00 is natural speed; lower is slower and higher is faster.", key="video_speaking_rate")
+        st.info("First generate and review the grounded narration plan, then render it into a narrated MP4 with styled slides, formulas, bilingual audio, and adjustable speaking rate.")
+    if st.button("🎬 Generate Video Overview Plan", key="generate_video_overview"):
+        if video_topic == "Custom topic" and not video_custom_topic.strip():
+            st.warning("Enter a custom topic before generating the video overview.")
+        else:
+            with st.spinner("Designing your educational video overview..."):
+                st.session_state.video_overview_plan = generate_video_overview_plan(video_format, video_language, video_topic, video_custom_topic, video_visual_style)
+                st.session_state.video_overview_config = {"format": video_format, "language": video_language, "topic": video_custom_topic if video_topic == "Custom topic" else video_topic, "visual_style": video_visual_style}
+                st.session_state.video_overview_mp4 = None
+            st.rerun()
+    if st.session_state.get("video_overview_plan"):
+        html('<div class="sm-answer"><div class="title">🎬 Your Video Overview Storyboard</div></div>')
+        st.markdown(st.session_state.video_overview_plan)
+        st.download_button("⬇️ Download video overview script", st.session_state.video_overview_plan, file_name="studient-video-overview.md", mime="text/markdown", key="download_video_overview")
+        if st.button("🎞️ Render narrated MP4 overview", key="render_video_overview"):
+            with st.spinner("Rendering slides, bilingual narration, and captions into MP4..."):
+                st.session_state.video_overview_mp4 = render_video_overview_mp4(st.session_state.video_overview_plan, st.session_state.video_overview_config, video_speaking_rate)
+        if st.session_state.get("video_overview_mp4"):
+            st.video(st.session_state.video_overview_mp4)
+            st.download_button("⬇️ Download narrated MP4", st.session_state.video_overview_mp4, file_name="studient-video-overview.mp4", mime="video/mp4", key="download_video_overview_mp4")
 
 # ============================================================ 
 # FOOTER 
