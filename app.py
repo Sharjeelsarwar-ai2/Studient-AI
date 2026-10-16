@@ -88,7 +88,18 @@ try:
 except ImportError:
     Fernet = None
     InvalidToken = Exception
- 
+
+# Urdu is written right-to-left with joined (contextual) letterforms; drawing
+# it with PIL's plain text layout renders disconnected tofu boxes (exactly
+# the broken-looking slide the user reported) unless the text is reshaped
+# into its presentation form and reordered for RTL display first.
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display as _bidi_get_display
+except ImportError:
+    arabic_reshaper = None
+    _bidi_get_display = None
+
 # ============================================================ 
 # PAGE CONFIG 
 # ============================================================ 
@@ -1525,8 +1536,73 @@ def _synthesize_video_narration(text, language, output_path, speaking_rate=1.0):
         return None
 
 
-def _render_video_slide(path, title, body, visual_style, scene_index=1):
-    """Render a readable study card; visual labels stay English for clarity across voices."""
+def _slide_font_paths(language):
+    """System font candidates that actually carry Urdu/Arabic or Devanagari
+    glyphs. DejaVu Sans (used everywhere else in this file) has none of
+    these, which is why Urdu slides were rendering as disconnected boxes."""
+    if language in ("Urdu", "Urdu-English mix"):
+        return [
+            "/usr/share/fonts/truetype/noto/NotoNastaliqUrdu-Regular.ttf",
+            "/usr/share/fonts/opentype/noto/NotoNastaliqUrdu-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansArabic-VariableFont_wdth,wght.ttf",
+            "/usr/share/fonts/truetype/fonts-nafees/NafeesNastaleeq.ttf",
+        ]
+    if language == "Hindi":
+        return [
+            "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSansDevanagari-VariableFont_wdth,wght.ttf",
+        ]
+    return []
+
+
+def _load_slide_fonts(language):
+    """Pick fonts that can render this language's script.
+
+    Returns (title_font, body_font, small_font, is_rtl, script_supported).
+    script_supported is False only when a non-Latin script had to fall back
+    to DejaVu (no matching glyphs), so the caller can warn once that the
+    deployment needs a Noto font package installed via packages.txt.
+    """
+    is_rtl = language in ("Urdu", "Urdu-English mix")
+    script_font_path = next((p for p in _slide_font_paths(language) if os.path.exists(p)), None)
+    if script_font_path:
+        try:
+            return (
+                ImageFont.truetype(script_font_path, 40),
+                ImageFont.truetype(script_font_path, 26),
+                ImageFont.truetype(script_font_path, 19),
+                is_rtl, True,
+            )
+        except Exception:
+            pass
+    try:
+        title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 44)
+        body_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 26)
+        small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 19)
+    except Exception:
+        title_font = body_font = small_font = ImageFont.load_default()
+    return title_font, body_font, small_font, is_rtl, (language == "English")
+
+
+def _shape_for_display(text, language):
+    """Reshape + reorder Urdu/Arabic text into its joined, right-to-left
+    presentation form before drawing. Without this, PIL draws each letter
+    in its isolated form with no joining and in logical (not visual) order,
+    which is what produced the broken, boxed-looking Urdu slide."""
+    if language in ("Urdu", "Urdu-English mix") and arabic_reshaper and _bidi_get_display:
+        try:
+            return _bidi_get_display(arabic_reshaper.reshape(text))
+        except Exception:
+            return text
+    return text
+
+
+def _render_video_slide(path, title, bullets, visual_style, slide_index, slide_total, language):
+    """Render one structured presentation slide: a heading, a progress bar,
+    and short numbered bullet points — a real slide layout instead of a
+    wall of paragraph text — with correct script/direction handling for
+    Urdu and Hindi narration."""
     if Image is None:
         return False
     width, height = 1280, 720
@@ -1561,57 +1637,59 @@ def _render_video_slide(path, title, body, visual_style, scene_index=1):
     elif visual_style == "Minimal revision cards":
         draw.rectangle((78, 72, width - 78, 82), fill=accent)
     draw.rounded_rectangle((38, 38, width - 38, height - 38), radius=28, outline=accent, width=5)
-    try:
-        title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 44)
-        body_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 27)
-        small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 20)
-    except Exception:
-        title_font = body_font = small_font = ImageFont.load_default()
-    draw.text((78, 78), title[:58], fill=accent, font=title_font)
+
+    title_font, body_font, small_font, is_rtl, script_ok = _load_slide_fonts(language)
     text_color = (241, 245, 249) if sum(background) < 180 else (31, 41, 55)
-    # A visual teaching anchor keeps the video from becoming a narrated text document.
-    if scene_index == 2:
-        nodes = [(150, 350), (390, 250), (390, 450), (650, 350), (910, 250), (1100, 400)]
-        for start, end in zip(nodes, nodes[1:]):
-            draw.line((*start, *end), fill=accent, width=8)
-        for x, y in nodes:
-            draw.ellipse((x - 28, y - 28, x + 28, y + 28), fill=accent, outline=(255, 255, 255), width=4)
-        draw.text((110, 535), "hosts  →  access network  →  routers  →  destination", fill=text_color, font=small_font)
-    elif scene_index == 3:
-        layers = [(100, "Application", (244, 114, 182)), (100, "Transport", (96, 165, 250)), (100, "Network", (52, 211, 153)), (100, "Link", (251, 191, 36)), (100, "Physical", (148, 163, 184))]
-        y_layer = 205
-        for _, label, color in layers:
-            draw.rounded_rectangle((150, y_layer, 650, y_layer + 62), radius=14, fill=color)
-            draw.text((185, y_layer + 14), label, fill=(15, 23, 42), font=body_font)
-            y_layer += 72
-        draw.text((760, 330), "message", fill=accent, font=body_font)
-        draw.line((760, 380, 1060, 380), fill=accent, width=7)
-        draw.polygon([(1060, 380), (1028, 365), (1028, 395)], fill=accent)
-        draw.text((760, 420), "encapsulation", fill=text_color, font=small_font)
-    elif scene_index == 4:
-        draw.rounded_rectangle((120, 250, 360, 430), radius=18, outline=accent, width=6)
-        draw.text((175, 325), "L bits", fill=accent, font=body_font)
-        draw.line((400, 340, 850, 340), fill=accent, width=7)
-        draw.polygon([(850, 340), (818, 325), (818, 355)], fill=accent)
-        draw.text((455, 270), "link rate R", fill=accent, font=body_font)
-        draw.text((455, 395), "d_trans = L / R", fill=text_color, font=body_font)
-        draw.text((455, 450), "transmission delay", fill=text_color, font=small_font)
-    elif scene_index == 5:
-        for i, label in enumerate(["Key idea", "Process", "Example", "Recap"]):
-            x = 120 + i * 270
-            draw.rounded_rectangle((x, 300, x + 200, 410), radius=18, fill=accent)
-            draw.text((x + 22, 335), label, fill=(255, 255, 255), font=small_font)
-            if i < 3:
-                draw.line((x + 205, 355, x + 260, 355), fill=accent, width=6)
-                draw.polygon([(x + 260, 355), (x + 240, 345), (x + 240, 365)], fill=accent)
-    wrapped = textwrap.wrap(re.sub(r"[*_#`]", "", body), width=62)[:12]
-    y = 165
-    for line in wrapped:
-        draw.text((86, y), line, fill=text_color, font=body_font)
-        y += 42
-    draw.text((82, height - 76), "Studient AI · Video Overview", fill=accent, font=small_font)
+    track_color = (71, 85, 105) if sum(background) < 180 else (226, 232, 240)
+
+    # Progress bar — shows where this slide sits in the lesson, like a
+    # presentation's slide counter / chapter progress.
+    bar_x0, bar_x1, bar_y = 78, width - 78, 56
+    draw.line((bar_x0, bar_y, bar_x1, bar_y), fill=track_color, width=6)
+    progress_x = bar_x0 + (bar_x1 - bar_x0) * (slide_index / max(1, slide_total))
+    draw.line((bar_x0, bar_y, progress_x, bar_y), fill=accent, width=6)
+    counter = f"{slide_index}/{slide_total}"
+    counter_bbox = draw.textbbox((0, 0), counter, font=small_font)
+    counter_x = bar_x0 if is_rtl else (bar_x1 - (counter_bbox[2] - counter_bbox[0]))
+    draw.text((counter_x, bar_y - 32), counter, fill=accent, font=small_font)
+
+    # Title
+    title_display = _shape_for_display(title[:60], language)
+    title_bbox = draw.textbbox((0, 0), title_display, font=title_font)
+    title_x = (width - 78 - (title_bbox[2] - title_bbox[0])) if is_rtl else 78
+    draw.text((title_x, 92), title_display, fill=accent, font=title_font)
+    draw.line((78, 150, width - 78, 150), fill=accent, width=3)
+
+    # Numbered bullet points — the structured "core points, step by step"
+    # layout, instead of a paragraph of raw narration text.
+    bullets = bullets[:5] or [title]
+    row_height = min(110, max(60, (height - 220) // len(bullets)))
+    badge_r = 22
+    y = 185
+    for i, bullet in enumerate(bullets, 1):
+        bullet_display = _shape_for_display(re.sub(r"[*_#`]", "", bullet).strip(), language)
+        wrapped = textwrap.wrap(bullet_display, width=44)[:3] or [bullet_display]
+        badge_cx = (width - 110) if is_rtl else 110
+        badge_cy = y + 24
+        draw.ellipse((badge_cx - badge_r, badge_cy - badge_r, badge_cx + badge_r, badge_cy + badge_r), fill=accent)
+        num_bbox = draw.textbbox((0, 0), str(i), font=body_font)
+        draw.text((badge_cx - (num_bbox[2] - num_bbox[0]) / 2, badge_cy - (num_bbox[3] - num_bbox[1]) / 2 - num_bbox[1]), str(i), fill=(255, 255, 255), font=body_font)
+        text_anchor = (badge_cx - badge_r - 22) if is_rtl else (badge_cx + badge_r + 22)
+        line_y = y
+        for line in wrapped:
+            line_bbox = draw.textbbox((0, 0), line, font=body_font)
+            line_x = (text_anchor - (line_bbox[2] - line_bbox[0])) if is_rtl else text_anchor
+            draw.text((line_x, line_y), line, fill=text_color, font=body_font)
+            line_y += 34
+        y += row_height
+
+    footer = "Studient AI · Video Overview"
+    footer_bbox = draw.textbbox((0, 0), footer, font=small_font)
+    footer_x = 78 if is_rtl else (width - 78 - (footer_bbox[2] - footer_bbox[0]))
+    draw.text((footer_x, height - 66), footer, fill=accent, font=small_font)
+
     image.save(path, format="PNG")
-    return True
+    return script_ok
 
 
 def _video_teacher_narration(plan, config):
@@ -1637,37 +1715,78 @@ def _slide_title_from_sentence(sentence, fallback):
     return title[0].upper() + title[1:] if title else fallback
 
 
-def _build_slide_segments(spoken, topic, slide_count):
-    """Split the ACTUAL narration into on-screen segments, so captions track what is
-    being said instead of showing five generic placeholder cards every time
-    (the earlier bug: visuals never changed to match the topic or the script)."""
+def _fallback_bullet_slides(spoken, topic, count, language):
+    """Turn narration sentences into short bullet slides without calling the
+    model again — used only if the structured-storyboard JSON call fails."""
     sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", spoken.strip()) if s.strip()]
     if not sentences:
         sentences = [spoken.strip() or topic]
-    slide_count = max(1, min(slide_count, len(sentences)))
-    per_slide = max(1, round(len(sentences) / slide_count))
+    count = max(1, min(count, len(sentences)))
+    per_slide = max(1, round(len(sentences) / count))
     groups, i = [], 0
     while i < len(sentences):
         groups.append(sentences[i:i + per_slide])
         i += per_slide
-    if len(groups) > slide_count:
-        groups[slide_count - 1:] = [sum(groups[slide_count - 1:], [])]
-    segments = []
+    if len(groups) > count:
+        groups[count - 1:] = [sum(groups[count - 1:], [])]
+    slides = []
     for index, group in enumerate(groups, 1):
-        body = " ".join(group)
         title = _slide_title_from_sentence(group[0], f"{topic} — part {index}") if index > 1 else topic
-        segments.append((title[:70], body))
-    return segments
+        bullets = [(s[:70] + "…") if len(s) > 70 else s for s in group[:4]] or [title]
+        slides.append({"title": title[:60], "bullets": bullets})
+    return slides
+
+
+def _build_presentation_storyboard(spoken, topic, language, slide_count):
+    """Turn the finished narration into a real slide-by-slide outline: a
+    'what we'll cover' agenda slide followed by short bulleted slides in
+    teaching order, instead of chopping raw narration sentences onto the
+    screen (the earlier bug the user flagged as 'a wall of text, not a
+    presentation'). The model only chooses structure here — the narration
+    itself was already written by _video_teacher_narration."""
+    content_count = max(3, slide_count - 1)
+    prompt = f"""You are designing the ON-SCREEN SLIDES for a short teaching video. The narration has already been written (given below only so your slides follow its order) — do not copy it verbatim onto the slides.
+
+Return ONLY a valid JSON array of exactly {content_count} objects, each shaped like:
+{{"title": "short slide heading, max 6 words", "bullets": ["short on-screen phrase, max 8 words", "...", "3 to 4 bullets per slide"]}}
+
+Write every "title" and "bullets" value in {language}. Order the slides the way a teacher would build the lesson: key definitions first, then how the ideas connect, then the main process or mechanism step by step, then a formula or worked example if the narration has one, then a short recap. Bullets are short on-screen key terms/phrases a student reads while the teacher talks — never full sentences, never narration text copied verbatim.
+
+TOPIC: {topic}
+NARRATION (for ordering/grounding only):
+{spoken[:6000]}"""
+    raw = ask_groq(prompt, max_tokens=1700)
+    slides = []
+    if raw:
+        try:
+            match = re.search(r"\[.*\]", raw, re.S)
+            data = json.loads(match.group(0) if match else raw)
+            for item in data:
+                title = str(item.get("title", "")).strip()
+                bullets = [str(b).strip() for b in item.get("bullets", []) if str(b).strip()][:4]
+                if title and bullets:
+                    slides.append({"title": title[:60], "bullets": bullets})
+        except Exception:
+            slides = []
+    if not slides:
+        slides = _fallback_bullet_slides(spoken, topic, content_count, language)
+    slides = slides[:content_count]
+    agenda_title = {
+        "English": "What we'll cover", "Urdu": "آج کیا پڑھیں گے",
+        "Urdu-English mix": "آج کیا پڑھیں گے", "Hindi": "आज क्या सीखेंगे",
+    }.get(language, "What we'll cover")
+    agenda = {"title": agenda_title, "bullets": [s["title"] for s in slides][:6] or [topic]}
+    return [agenda] + slides
 
 
 def render_video_overview_mp4(plan, config, speaking_rate=1.0):
-    """Render storyboard cards plus TTS narration into a playable MP4 using FFmpeg.
+    """Render a structured slide deck plus TTS narration into a playable MP4.
 
-    Visuals are now generated FROM the narration that is actually spoken (so
-    on-screen text tracks what the teacher is saying, NotebookLM-style)
-    instead of five fixed generic cards, and every slide gets a slow
-    Ken Burns zoom/pan so the result reads as an animated video rather than
-    a static slideshow.
+    Each slide is a short heading with numbered bullet points generated
+    FROM the actual narration and topic (an agenda slide followed by
+    step-by-step content slides, NotebookLM-style) instead of raw narration
+    text dumped onto a card, and every slide gets a slow Ken Burns zoom/pan
+    so the result reads as an animated video rather than a static slideshow.
     """
     if gTTS is None and shutil.which("edge-tts") is None:
         st.error("Narration requires edge-tts or gTTS. Add edge-tts to requirements.txt and redeploy.")
@@ -1714,17 +1833,18 @@ def render_video_overview_mp4(plan, config, speaking_rate=1.0):
         except Exception as exc:
             st.error(f"Could not create narration audio: {exc}")
             return None
-        # One slide roughly every 40 seconds of speech, keeps pacing lively
-        # without flashing cards too fast for a beginner to read.
-        slide_count = max(5, min(12, round(audio_duration / 40)))
-        slide_texts = _build_slide_segments(spoken, topic, slide_count)
+        # One slide roughly every 35-40 seconds of speech: enough to read
+        # comfortably, enough slides to feel like a real presentation.
+        slide_count = max(6, min(12, round(audio_duration / 38)))
+        slide_texts = _build_presentation_storyboard(spoken, topic, language, slide_count)
         fps = 25
         clip_paths = []
+        script_ok = True
         try:
-            for index, (title, body) in enumerate(slide_texts, 1):
+            for index, slide in enumerate(slide_texts, 1):
                 still_path = os.path.join(workdir, f"slide-{index:02d}.png")
-                scene_index = ((index - 1) % 5) + 1
-                _render_video_slide(still_path, title, body, visual_style, scene_index)
+                rendered_ok = _render_video_slide(still_path, slide["title"], slide["bullets"], visual_style, index, len(slide_texts), language)
+                script_ok = script_ok and rendered_ok
                 clip_duration = audio_duration / len(slide_texts)
                 frame_count = max(1, int(round(clip_duration * fps)))
                 clip_path = os.path.join(workdir, f"clip-{index:02d}.mp4")
@@ -1760,6 +1880,8 @@ def render_video_overview_mp4(plan, config, speaking_rate=1.0):
                  "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-shortest", output_path],
                 check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
+            if not script_ok:
+                st.warning(f"This server has no Urdu/Hindi font installed, so slide text fell back to a Latin-only font and may not display correctly. Add `fonts-noto` (or `fonts-noto-core` + `fonts-noto-extra`) to packages.txt and redeploy to fix the on-screen text for {language}.")
             with open(output_path, "rb") as handle:
                 return handle.read()
         except Exception as exc:
