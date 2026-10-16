@@ -28,9 +28,10 @@ try:
 except ImportError:
     Presentation = None
 
-import re 
-import json 
-import os 
+import re
+import json
+import os
+import sys
 import hashlib
 import random
 import time
@@ -791,6 +792,86 @@ html("""
   .stTabs [data-baseweb="tab"] { min-width: 78px; min-height: 46px; padding: 8px 10px !important; font-size: 11px !important; }
 }
 .sm-privacy-note { margin-top: 8px; padding: 10px 12px; border-radius: 12px; color: var(--ink-faint); background: rgba(79,70,229,.06); border: 1px solid rgba(79,70,229,.12); font-size: 11px; line-height: 1.45; }
+
+/* ============================================================
+   FLUSH TAB BAR — FINAL OVERRIDE (targets ARIA roles + data-baseweb
+   attributes together, with !important on every box-model property,
+   so the bar renders as one seamless pill whether or not the browser
+   supports :has(). Applies to BOTH the parent section tabs and the
+   child tabs beneath them.)
+   ============================================================ */
+div[data-testid="stTabs"] div[data-baseweb="tab-list"],
+div[data-testid="stTabs"] [role="tablist"] {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  width: 100% !important;
+  gap: 0 !important;
+  padding: 4px !important;
+  margin: 10px 0 20px !important;
+  border-radius: 999px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  background: rgba(255,255,255,.70) !important;
+  border: 1px solid rgba(255,255,255,.85) !important;
+  box-shadow: 0 10px 24px rgba(31,25,90,.12), inset 0 1px 0 rgba(255,255,255,.8) !important;
+}
+div[data-testid="stTabs"] div[data-baseweb="tab-list"] button[data-baseweb="tab"],
+div[data-testid="stTabs"] [role="tablist"] button[role="tab"],
+div[data-testid="stTabs"] div[data-baseweb="tab-list"] [data-baseweb="tab"],
+div[data-testid="stTabs"] [role="tablist"] [role="tab"] {
+  flex: 1 1 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  min-height: 48px !important;
+  padding: 12px 16px !important;
+  margin: 0 !important;
+  border-radius: 999px !important;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  color: var(--ink-soft) !important;
+  font-weight: 700 !important;
+  font-size: 14px !important;
+  white-space: nowrap !important;
+  transition: background .18s ease, color .18s ease !important;
+}
+div[data-testid="stTabs"] div[data-baseweb="tab-list"] [data-baseweb="tab"][aria-selected="true"],
+div[data-testid="stTabs"] [role="tablist"] [role="tab"][aria-selected="true"] {
+  color: #ffffff !important;
+  background: linear-gradient(135deg, var(--accent1), var(--accent2), var(--accent4)) !important;
+  box-shadow: 0 8px 18px rgba(79,70,229,.28) !important;
+}
+div[data-testid="stTabs"] [data-baseweb="tab-highlight"],
+div[data-testid="stTabs"] [data-baseweb="tab-border"] {
+  display: none !important;
+  height: 0 !important;
+  opacity: 0 !important;
+}
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"],
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > [role="tablist"] {
+  position: sticky !important;
+  top: 3.15rem !important;
+  z-index: 30 !important;
+  min-height: 60px !important;
+  border-radius: 999px !important;
+}
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > div[data-baseweb="tab-list"] [data-baseweb="tab"],
+.main [data-testid="stTabs"]:has(.sm-parent-nav-heading) > [role="tablist"] [role="tab"] {
+  min-height: 52px !important;
+  padding: 14px 20px !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
+}
+@media (max-width: 700px) {
+  div[data-testid="stTabs"] div[data-baseweb="tab-list"] [data-baseweb="tab"],
+  div[data-testid="stTabs"] [role="tablist"] [role="tab"] {
+    font-size: 11px !important;
+    padding: 9px 8px !important;
+    min-height: 44px !important;
+  }
+}
 </style>
 """)
  
@@ -1329,23 +1410,119 @@ def _edge_voice_for_language(language):
     }.get(language, "en-US-GuyNeural")
 
 
-def _synthesize_video_narration(text, language, output_path):
-    """Synthesize narration with a clear male voice, falling back to gTTS if needed."""
-    edge_tts = shutil.which("edge-tts")
-    if edge_tts:
+def _edge_tts_command_bases():
+    """Every way edge-tts might be runnable in this environment.
+
+    A pip install does not always put the `edge-tts` console script on PATH
+    (common on Streamlit Cloud), which silently sent every render to the
+    robotic gTTS fallback before. Try the real CLI first, then fall back to
+    invoking the installed package as a module with the current Python.
+    """
+    bases = []
+    cli = shutil.which("edge-tts")
+    if cli:
+        bases.append([cli])
+    bases.append([sys.executable, "-m", "edge_tts"])
+    return bases
+
+
+def _split_text_for_tts(text, max_chars=1700):
+    """Chunk narration on sentence boundaries so nothing gets silently truncated.
+
+    The previous version hard-cut narration at 11000 characters, which could
+    chop a lesson off mid-sentence (the "voice stops abruptly" complaint).
+    Chunking + concatenating preserves the full script instead.
+    """
+    sentences = re.split(r"(?<=[.!?۔])\s+", text.strip())
+    chunks, current = [], ""
+    for sentence in sentences:
+        if not sentence:
+            continue
+        candidate = f"{current} {sentence}".strip() if current else sentence
+        if len(candidate) > max_chars and current:
+            chunks.append(current)
+            current = sentence
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    return chunks or [text.strip()]
+
+
+def _edge_rate_arg(speaking_rate):
+    """Convert a 0.75–1.25 multiplier into edge-tts's native +/-% rate string.
+
+    Changing the rate at synthesis time (native prosody) sounds far more
+    natural than stretching finished audio with ffmpeg's atempo filter, which
+    was the main source of the robotic/warped "voice issue".
+    """
+    percent = round((max(0.5, min(1.8, float(speaking_rate))) - 1.0) * 100)
+    return f"{'+' if percent >= 0 else ''}{percent}%"
+
+
+def _synthesize_video_narration(text, language, output_path, speaking_rate=1.0):
+    """Synthesize narration with a clear male voice, falling back to gTTS if needed.
+
+    Returns the name of the engine actually used ("edge-tts" or "gtts"), or
+    None if synthesis failed, so the caller can tell the user what produced
+    the audio instead of failing silently into a worse-sounding fallback.
+    """
+    chunks = _split_text_for_tts(text)
+    voice = _edge_voice_for_language(language)
+    rate_arg = _edge_rate_arg(speaking_rate)
+    for base_cmd in _edge_tts_command_bases():
         try:
-            subprocess.run([
-                edge_tts, "--voice", _edge_voice_for_language(language),
-                "--rate", "+0%", "--text", text[:11000], "--write-media", output_path,
-            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            return True
+            with tempfile.TemporaryDirectory(prefix="studient-tts-") as chunk_dir:
+                part_paths = []
+                for i, chunk in enumerate(chunks):
+                    part_path = os.path.join(chunk_dir, f"part-{i:03d}.mp3")
+                    subprocess.run(
+                        base_cmd + ["--voice", voice, "--rate", rate_arg, "--text", chunk, "--write-media", part_path],
+                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120,
+                    )
+                    if not os.path.exists(part_path) or os.path.getsize(part_path) == 0:
+                        raise RuntimeError("edge-tts produced an empty audio part")
+                    part_paths.append(part_path)
+                if len(part_paths) == 1:
+                    shutil.copyfile(part_paths[0], output_path)
+                else:
+                    list_path = os.path.join(chunk_dir, "parts.txt")
+                    with open(list_path, "w", encoding="utf-8") as handle:
+                        for part_path in part_paths:
+                            handle.write(f"file '{part_path}'\n")
+                    ffmpeg = shutil.which("ffmpeg")
+                    subprocess.run(
+                        [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", output_path],
+                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    )
+            return "edge-tts"
         except Exception:
-            pass
+            continue
     if gTTS is None:
-        return False
+        return None
     code = {"English": "en", "Urdu": "ur", "Urdu-English mix": "ur", "Hindi": "hi"}.get(language, "en")
-    gTTS(text=text[:11000], lang=code, slow=False).save(output_path)
-    return True
+    try:
+        with tempfile.TemporaryDirectory(prefix="studient-tts-") as chunk_dir:
+            part_paths = []
+            for i, chunk in enumerate(chunks):
+                part_path = os.path.join(chunk_dir, f"part-{i:03d}.mp3")
+                gTTS(text=chunk, lang=code, slow=False).save(part_path)
+                part_paths.append(part_path)
+            if len(part_paths) == 1:
+                shutil.copyfile(part_paths[0], output_path)
+            else:
+                list_path = os.path.join(chunk_dir, "parts.txt")
+                with open(list_path, "w", encoding="utf-8") as handle:
+                    for part_path in part_paths:
+                        handle.write(f"file '{part_path}'\n")
+                ffmpeg = shutil.which("ffmpeg")
+                subprocess.run(
+                    [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", list_path, "-c", "copy", output_path],
+                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+        return "gtts"
+    except Exception:
+        return None
 
 
 def _render_video_slide(path, title, body, visual_style, scene_index=1):
@@ -1391,6 +1568,7 @@ def _render_video_slide(path, title, body, visual_style, scene_index=1):
     except Exception:
         title_font = body_font = small_font = ImageFont.load_default()
     draw.text((78, 78), title[:58], fill=accent, font=title_font)
+    text_color = (241, 245, 249) if sum(background) < 180 else (31, 41, 55)
     # A visual teaching anchor keeps the video from becoming a narrated text document.
     if scene_index == 2:
         nodes = [(150, 350), (390, 250), (390, 450), (650, 350), (910, 250), (1100, 400)]
@@ -1398,7 +1576,7 @@ def _render_video_slide(path, title, body, visual_style, scene_index=1):
             draw.line((*start, *end), fill=accent, width=8)
         for x, y in nodes:
             draw.ellipse((x - 28, y - 28, x + 28, y + 28), fill=accent, outline=(255, 255, 255), width=4)
-        draw.text((110, 535), "hosts  →  access network  →  routers  →  destination", fill=text_color if 'text_color' in locals() else accent, font=small_font)
+        draw.text((110, 535), "hosts  →  access network  →  routers  →  destination", fill=text_color, font=small_font)
     elif scene_index == 3:
         layers = [(100, "Application", (244, 114, 182)), (100, "Transport", (96, 165, 250)), (100, "Network", (52, 211, 153)), (100, "Link", (251, 191, 36)), (100, "Physical", (148, 163, 184))]
         y_layer = 205
@@ -1409,15 +1587,15 @@ def _render_video_slide(path, title, body, visual_style, scene_index=1):
         draw.text((760, 330), "message", fill=accent, font=body_font)
         draw.line((760, 380, 1060, 380), fill=accent, width=7)
         draw.polygon([(1060, 380), (1028, 365), (1028, 395)], fill=accent)
-        draw.text((760, 420), "encapsulation", fill=text_color if 'text_color' in locals() else accent, font=small_font)
+        draw.text((760, 420), "encapsulation", fill=text_color, font=small_font)
     elif scene_index == 4:
         draw.rounded_rectangle((120, 250, 360, 430), radius=18, outline=accent, width=6)
         draw.text((175, 325), "L bits", fill=accent, font=body_font)
         draw.line((400, 340, 850, 340), fill=accent, width=7)
         draw.polygon([(850, 340), (818, 325), (818, 355)], fill=accent)
         draw.text((455, 270), "link rate R", fill=accent, font=body_font)
-        draw.text((455, 395), "d_trans = L / R", fill=text_color if 'text_color' in locals() else accent, font=body_font)
-        draw.text((455, 450), "transmission delay", fill=text_color if 'text_color' in locals() else accent, font=small_font)
+        draw.text((455, 395), "d_trans = L / R", fill=text_color, font=body_font)
+        draw.text((455, 450), "transmission delay", fill=text_color, font=small_font)
     elif scene_index == 5:
         for i, label in enumerate(["Key idea", "Process", "Example", "Recap"]):
             x = 120 + i * 270
@@ -1428,7 +1606,6 @@ def _render_video_slide(path, title, body, visual_style, scene_index=1):
                 draw.polygon([(x + 260, 355), (x + 240, 345), (x + 240, 365)], fill=accent)
     wrapped = textwrap.wrap(re.sub(r"[*_#`]", "", body), width=62)[:12]
     y = 165
-    text_color = (241, 245, 249) if sum(background) < 180 else (31, 41, 55)
     for line in wrapped:
         draw.text((86, y), line, fill=text_color, font=body_font)
         y += 42
@@ -1451,8 +1628,47 @@ VIDEO PLAN:
     return clean_video_narration(narration) if narration else clean_video_narration(plan)
 
 
+def _slide_title_from_sentence(sentence, fallback):
+    """Turn the first sentence of a narration segment into a short on-screen heading."""
+    words = re.sub(r"[*_#`]", "", sentence).split()
+    if not words:
+        return fallback
+    title = " ".join(words[:7])
+    return title[0].upper() + title[1:] if title else fallback
+
+
+def _build_slide_segments(spoken, topic, slide_count):
+    """Split the ACTUAL narration into on-screen segments, so captions track what is
+    being said instead of showing five generic placeholder cards every time
+    (the earlier bug: visuals never changed to match the topic or the script)."""
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", spoken.strip()) if s.strip()]
+    if not sentences:
+        sentences = [spoken.strip() or topic]
+    slide_count = max(1, min(slide_count, len(sentences)))
+    per_slide = max(1, round(len(sentences) / slide_count))
+    groups, i = [], 0
+    while i < len(sentences):
+        groups.append(sentences[i:i + per_slide])
+        i += per_slide
+    if len(groups) > slide_count:
+        groups[slide_count - 1:] = [sum(groups[slide_count - 1:], [])]
+    segments = []
+    for index, group in enumerate(groups, 1):
+        body = " ".join(group)
+        title = _slide_title_from_sentence(group[0], f"{topic} — part {index}") if index > 1 else topic
+        segments.append((title[:70], body))
+    return segments
+
+
 def render_video_overview_mp4(plan, config, speaking_rate=1.0):
-    """Render storyboard cards plus TTS narration into a playable MP4 using FFmpeg."""
+    """Render storyboard cards plus TTS narration into a playable MP4 using FFmpeg.
+
+    Visuals are now generated FROM the narration that is actually spoken (so
+    on-screen text tracks what the teacher is saying, NotebookLM-style)
+    instead of five fixed generic cards, and every slide gets a slow
+    Ken Burns zoom/pan so the result reads as an animated video rather than
+    a static slideshow.
+    """
     if gTTS is None and shutil.which("edge-tts") is None:
         st.error("Narration requires edge-tts or gTTS. Add edge-tts to requirements.txt and redeploy.")
         return None
@@ -1471,44 +1687,79 @@ def render_video_overview_mp4(plan, config, speaking_rate=1.0):
         narration_path = os.path.join(workdir, "narration.mp3")
         audio_path = os.path.join(workdir, "narration-speed.mp3")
         output_path = os.path.join(workdir, "studient-video-overview.mp4")
-        tts_code = {"English": "en", "Urdu": "ur", "Urdu-English mix": "ur", "Hindi": "hi"}.get(language, "en")
         try:
-            if not _synthesize_video_narration(spoken, language, narration_path):
+            engine_used = _synthesize_video_narration(spoken, language, narration_path, speaking_rate)
+            if not engine_used:
                 st.error("No compatible narration engine is available. Install edge-tts or gTTS.")
                 return None
-            subprocess.run([ffmpeg, "-y", "-i", narration_path, "-filter:a", _ffmpeg_atempo_filter(speaking_rate), "-c:a", "libmp3lame", audio_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if engine_used == "gtts":
+                st.warning("edge-tts wasn't reachable, so this narration used the backup gTTS voice, which sounds more robotic. Check that edge-tts is installed and that this deployment has outbound internet access, then try again for the natural neural voice.")
+            # edge-tts already applied the requested rate natively; ffmpeg only
+            # needs to correct the length if gTTS (which ignores rate) was used,
+            # or to gently compress a lesson that ran long.
+            needs_atempo = engine_used == "gtts" and abs(speaking_rate - 1.0) > 0.01
+            if needs_atempo:
+                subprocess.run([ffmpeg, "-y", "-i", narration_path, "-filter:a", _ffmpeg_atempo_filter(speaking_rate), "-c:a", "libmp3lame", audio_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                shutil.copyfile(narration_path, audio_path)
             duration_probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_path], check=True, capture_output=True, text=True)
             audio_duration = max(8.0, float(duration_probe.stdout.strip()))
             # Keep the final lesson under ten minutes without abruptly cutting speech.
             if audio_duration > 540:
-                fast_rate = min(2.0, speaking_rate * audio_duration / 540.0)
-                subprocess.run([ffmpeg, "-y", "-i", narration_path, "-filter:a", _ffmpeg_atempo_filter(fast_rate), "-c:a", "libmp3lame", audio_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                fast_rate = min(2.0, audio_duration / 540.0)
+                subprocess.run([ffmpeg, "-y", "-i", audio_path, "-filter:a", _ffmpeg_atempo_filter(fast_rate), "-c:a", "libmp3lame", audio_path + ".tmp.mp3"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                shutil.move(audio_path + ".tmp.mp3", audio_path)
                 duration_probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_path], check=True, capture_output=True, text=True)
                 audio_duration = min(540.0, float(duration_probe.stdout.strip()))
         except Exception as exc:
             st.error(f"Could not create narration audio: {exc}")
             return None
-        slide_texts = [
-            ("The big picture", f"{topic}\nFirst define the key ideas, then connect them into one mental model."),
-            ("How the network fits together", "Hosts connect through access networks and routers forward data across the network core."),
-            ("Layers and encapsulation", "Each layer provides a service and adds information as data moves toward the wire."),
-            ("Mechanism and formula", "A packet is transmitted across a link. Transmission delay: d_trans = L / R."),
-            ("Connect, apply, recap", "Follow the explanation, test the idea with an example, then recall the three key takeaways."),
-        ]
-        slide_paths = []
-        for index, (title, body) in enumerate(slide_texts, 1):
-            path = os.path.join(workdir, f"slide-{index:02d}.png")
-            _render_video_slide(path, title, body, visual_style, index)
-            slide_paths.append(path)
-        per_slide = audio_duration / len(slide_paths)
-        concat_path = os.path.join(workdir, "slides.txt")
-        with open(concat_path, "w", encoding="utf-8") as handle:
-            for path in slide_paths:
-                handle.write(f"file '{path}'\n")
-                handle.write(f"duration {per_slide:.4f}\n")
-            handle.write(f"file '{slide_paths[-1]}'\n")
+        # One slide roughly every 40 seconds of speech, keeps pacing lively
+        # without flashing cards too fast for a beginner to read.
+        slide_count = max(5, min(12, round(audio_duration / 40)))
+        slide_texts = _build_slide_segments(spoken, topic, slide_count)
+        fps = 25
+        clip_paths = []
         try:
-            subprocess.run([ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", concat_path, "-i", audio_path, "-vf", "scale=1280:720,format=yuv420p", "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", "-b:a", "128k", "-shortest", output_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            for index, (title, body) in enumerate(slide_texts, 1):
+                still_path = os.path.join(workdir, f"slide-{index:02d}.png")
+                scene_index = ((index - 1) % 5) + 1
+                _render_video_slide(still_path, title, body, visual_style, scene_index)
+                clip_duration = audio_duration / len(slide_texts)
+                frame_count = max(1, int(round(clip_duration * fps)))
+                clip_path = os.path.join(workdir, f"clip-{index:02d}.mp4")
+                # Alternate a slow zoom-in with a slow zoom-out so consecutive
+                # slides don't feel identical — this is the "animation" layer
+                # NotebookLM-style overviews use instead of frozen stills.
+                if index % 2 == 1:
+                    zoom_expr = "min(zoom+0.0009,1.10)"
+                else:
+                    zoom_expr = "if(eq(on,1),1.10,max(zoom-0.0009,1.00))"
+                zoompan = (
+                    f"scale=1280:720,zoompan=z='{zoom_expr}':d={frame_count}:"
+                    f"x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1280x720:fps={fps},format=yuv420p"
+                )
+                subprocess.run(
+                    [ffmpeg, "-y", "-loop", "1", "-i", still_path, "-vf", zoompan,
+                     "-t", f"{clip_duration:.3f}", "-c:v", "libx264", "-preset", "veryfast",
+                     "-pix_fmt", "yuv420p", clip_path],
+                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                )
+                clip_paths.append(clip_path)
+            concat_path = os.path.join(workdir, "clips.txt")
+            with open(concat_path, "w", encoding="utf-8") as handle:
+                for clip_path in clip_paths:
+                    handle.write(f"file '{clip_path}'\n")
+            silent_path = os.path.join(workdir, "silent.mp4")
+            subprocess.run(
+                [ffmpeg, "-y", "-f", "concat", "-safe", "0", "-i", concat_path, "-c", "copy", silent_path],
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+            subprocess.run(
+                [ffmpeg, "-y", "-i", silent_path, "-i", audio_path, "-map", "0:v:0", "-map", "1:a:0",
+                 "-c:v", "copy", "-c:a", "aac", "-b:a", "128k", "-shortest", output_path],
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
             with open(output_path, "rb") as handle:
                 return handle.read()
         except Exception as exc:
