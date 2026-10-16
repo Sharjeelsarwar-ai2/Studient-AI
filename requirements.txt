@@ -10,3 +10,4 @@ reportlab
 Pillow
 streamlit-autorefresh
 cryptography
+edge-tts
