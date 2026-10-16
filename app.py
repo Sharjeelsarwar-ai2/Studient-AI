@@ -1319,6 +1319,35 @@ def _ffmpeg_atempo_filter(rate):
     return ",".join(f"atempo={factor:.4f}" for factor in factors)
 
 
+def _edge_voice_for_language(language):
+    """Use clear male neural voices for the video; gTTS remains the fallback."""
+    return {
+        "English": "en-US-GuyNeural",
+        "Urdu": "ur-PK-AsadNeural",
+        "Urdu-English mix": "ur-PK-AsadNeural",
+        "Hindi": "hi-IN-MadhurNeural",
+    }.get(language, "en-US-GuyNeural")
+
+
+def _synthesize_video_narration(text, language, output_path):
+    """Synthesize narration with a clear male voice, falling back to gTTS if needed."""
+    edge_tts = shutil.which("edge-tts")
+    if edge_tts:
+        try:
+            subprocess.run([
+                edge_tts, "--voice", _edge_voice_for_language(language),
+                "--rate", "+0%", "--text", text[:11000], "--write-media", output_path,
+            ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except Exception:
+            pass
+    if gTTS is None:
+        return False
+    code = {"English": "en", "Urdu": "ur", "Urdu-English mix": "ur", "Hindi": "hi"}.get(language, "en")
+    gTTS(text=text[:11000], lang=code, slow=False).save(output_path)
+    return True
+
+
 def _render_video_slide(path, title, body, visual_style, scene_index=1):
     """Render a readable study card; visual labels stay English for clarity across voices."""
     if Image is None:
@@ -1335,6 +1364,25 @@ def _render_video_slide(path, title, body, visual_style, scene_index=1):
     background, accent = palette.get(visual_style, palette["Clean academic slides"])
     image = Image.new("RGB", (width, height), background)
     draw = ImageDraw.Draw(image)
+    if visual_style == "Animated network diagrams":
+        for x in range(70, width - 70, 90):
+            draw.line((x, 60, x, height - 60), fill=tuple(min(255, c + 18) for c in background), width=1)
+        for y_grid in range(60, height - 60, 70):
+            draw.line((60, y_grid, width - 60, y_grid), fill=tuple(min(255, c + 18) for c in background), width=1)
+    elif visual_style == "Studient glassmorphism":
+        draw.rounded_rectangle((70, 58, width - 70, height - 58), radius=34, fill=(255, 255, 255), outline=(255, 255, 255), width=2)
+        draw.ellipse((width - 310, -80, width + 40, 270), fill=(221, 214, 254))
+        draw.ellipse((-100, height - 270, 240, height + 80), fill=(251, 207, 232))
+    elif visual_style == "Whiteboard teaching":
+        for x in range(90, width - 80, 80):
+            draw.line((x, 70, x, height - 70), fill=(226, 232, 240), width=1)
+        for y_grid in range(70, height - 70, 60):
+            draw.line((80, y_grid, width - 80, y_grid), fill=(226, 232, 240), width=1)
+    elif visual_style == "Dark lecture style":
+        for x, y_star in [(120, 150), (260, 590), (720, 140), (1080, 180), (1040, 580), (520, 610)]:
+            draw.ellipse((x, y_star, x + 5, y_star + 5), fill=(226, 232, 240))
+    elif visual_style == "Minimal revision cards":
+        draw.rectangle((78, 72, width - 78, 82), fill=accent)
     draw.rounded_rectangle((38, 38, width - 38, height - 38), radius=28, outline=accent, width=5)
     try:
         title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 44)
@@ -1394,7 +1442,7 @@ def _video_teacher_narration(plan, config):
     language = config.get("language", "English")
     prompt = f"""Extract or rewrite the teacher narration from the video plan below.
 Return ONLY the words the teacher should speak. Do not include a title, headings, timestamps, scene labels, emojis, bullets, numbering, visual directions, audience notes, copyright information, or calls to download anything.
-Teach in this order: define the key concepts first; connect them into one mental model; explain the most important process or mechanism step by step; explain one formula or example if present; finish with three short recap ideas. Sound like a patient university instructor, using transitions and intuition instead of reading a list.
+    Teach in this order: define the key concepts first; connect them into one mental model; explain the most important process or mechanism step by step; explain one formula or example if present; finish with three short recap ideas. Sound like a patient university instructor, using transitions and intuition instead of reading a list. Use short sentences and natural pauses after definitions and formulas. Pronounce technical terms clearly: say abbreviations such as IP, TCP, and DNS as separate letters when appropriate, and say formulas in words as well as symbols.
 The narration must be about 900–1100 words, suitable for a 6–9 minute video and never more than 10 minutes. Use plain readable spoken language. Keep networking terms and formulas accurate.
 Requested language: {language}
 VIDEO PLAN:
@@ -1405,8 +1453,8 @@ VIDEO PLAN:
 
 def render_video_overview_mp4(plan, config, speaking_rate=1.0):
     """Render storyboard cards plus TTS narration into a playable MP4 using FFmpeg."""
-    if gTTS is None:
-        st.error("Narration requires gTTS. Add gTTS to requirements.txt and redeploy.")
+    if gTTS is None and shutil.which("edge-tts") is None:
+        st.error("Narration requires edge-tts or gTTS. Add edge-tts to requirements.txt and redeploy.")
         return None
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -1417,15 +1465,17 @@ def render_video_overview_mp4(plan, config, speaking_rate=1.0):
     visual_style = config.get("visual_style", "Clean academic slides")
     spoken = clean_video_narration(_video_teacher_narration(plan, config))
     if language == "Urdu-English mix":
-        bilingual_prompt = f"Rewrite this narration in natural bilingual Urdu-English for a Pakistani university student. Explain connective sentences in Urdu but retain Computer Networks terms, formulas, and protocol names in English. Return spoken narration only:\n\n{spoken[:9000]}"
-        spoken = clean_speech_text(ask_groq(bilingual_prompt, max_tokens=4200)) or spoken
+        bilingual_prompt = f"Rewrite this narration as a clear teacher-led Urdu-English lesson for a Pakistani university student. Use natural Urdu for explanations and transitions, but retain Computer Networks terms and protocol names in English. Spell out abbreviations when first introduced, add punctuation for natural pauses, and say every formula in words after showing its plain-text form. Return spoken narration only: no headings, timestamps, emojis, bullets, scene labels, or metadata. Keep it under 1100 words.\n\n{spoken[:9000]}"
+        spoken = clean_video_narration(ask_groq(bilingual_prompt, max_tokens=3000)) or spoken
     with tempfile.TemporaryDirectory(prefix="studient-video-") as workdir:
         narration_path = os.path.join(workdir, "narration.mp3")
         audio_path = os.path.join(workdir, "narration-speed.mp3")
         output_path = os.path.join(workdir, "studient-video-overview.mp4")
         tts_code = {"English": "en", "Urdu": "ur", "Urdu-English mix": "ur", "Hindi": "hi"}.get(language, "en")
         try:
-            gTTS(text=spoken[:11000], lang=tts_code, slow=False).save(narration_path)
+            if not _synthesize_video_narration(spoken, language, narration_path):
+                st.error("No compatible narration engine is available. Install edge-tts or gTTS.")
+                return None
             subprocess.run([ffmpeg, "-y", "-i", narration_path, "-filter:a", _ffmpeg_atempo_filter(speaking_rate), "-c:a", "libmp3lame", audio_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             duration_probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", audio_path], check=True, capture_output=True, text=True)
             audio_duration = max(8.0, float(duration_probe.stdout.strip()))
@@ -3242,6 +3292,7 @@ with tabs[16]:
         video_custom_topic = st.text_input("Custom topic", placeholder="Used when Topic is Custom topic", disabled=video_topic != "Custom topic", key="video_custom_topic")
         video_visual_style = st.selectbox("Visual style", ["Clean academic slides", "Animated network diagrams", "Studient glassmorphism", "Whiteboard teaching", "Dark lecture style", "Minimal revision cards"], key="video_visual_style")
         video_speaking_rate = st.slider("Speaking rate", min_value=0.75, max_value=1.25, value=1.0, step=0.05, help="1.00 is natural speed; lower is slower and higher is faster.", key="video_speaking_rate")
+        st.caption("Voice: clear male university instructor · technical terms are spoken slowly and clearly")
         st.info("First generate and review the grounded narration plan, then render it into a narrated MP4 with styled slides, formulas, bilingual audio, and adjustable speaking rate.")
     if st.button("🎬 Generate Video Overview Plan", key="generate_video_overview"):
         if video_topic == "Custom topic" and not video_custom_topic.strip():
