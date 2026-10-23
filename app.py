@@ -32,6 +32,7 @@ import re
 import json
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import random
 import time
@@ -1302,11 +1303,10 @@ def generate_comprehensive_summary(text, detail_level="Detailed", focus="", prog
         "Detailed": "Explain every major topic clearly, including intuition, definitions, steps, examples, formulas, variables, and exam traps.",
         "Exam-focused": "Prioritize likely quiz and university-exam material: definitions, distinctions, protocols, steps, formulas, examples, common confusions, and quick recall points.",
     }.get(detail_level, "Explain every major topic clearly.")
-    notes = []
-    for index, batch in enumerate(batches, 1):
+    def _summarize_batch(index, batch):
         prompt = f"""You are building reliable study notes from source sections {index} of {len(batches)}.
 Extract all meaningful topics and facts in this batch. Preserve slide/page order and labels.
-For each academic topic include: topic name, accurate definition, purpose, intuitive explanation, key properties, formulas with variables and units when present, examples, and likely exam confusion. Exclude slide-use/licensing policies, copyright notices, author or publisher information, lecture roadmaps, chapter goals, decorative headings, and other administrative metadata from the topic explanations unless they contain a substantive networking concept.
+For each academic topic include: topic name, accurate definition, purpose, intuitive explanation, key properties, formulas with variables and units when present, examples, and likely exam confusion. Exclude slide-use/licensing policies, copyright notices, author or publisher information, lecture roadmaps, chapter goals, decorative headings, and other administrative metadata from the topic explanations unless they contain a substantive concept from this material's actual subject.
 For every process, protocol, algorithm, mechanism, architecture flow, or workflow, explain it as a numbered sequence: starting conditions or inputs -> each step in order -> decisions/branches -> intermediate state or data movement -> final output/result. Also explain why each step happens, what problem it solves, and what can go wrong. Never reduce a process to a one-line label.
 Do not invent information. If a formula, definition, or visual-only claim is not readable, say 'not stated in the extracted text'.
 Return structured markdown notes only.
@@ -1314,21 +1314,34 @@ Return structured markdown notes only.
 SOURCE BATCH:
 {batch[:14000]}"""
         note = ask_groq(prompt, max_tokens=900 if detail_level == "Brief" else 1500 if detail_level == "Exam-focused" else 1900)
-        if note:
-            notes.append(f"### Source batch {index}\n{note}")
-        if progress:
-            progress.progress(index / len(batches), text=f"Analyzing source batch {index}/{len(batches)}...")
+        return index, note
+
+    # Each batch is summarized independently, so running them concurrently
+    # (instead of one request at a time) is what actually cuts generation
+    # time down for long documents — the previous sequential loop was the
+    # main reason summaries felt slow.
+    results = {}
+    completed = 0
+    with ThreadPoolExecutor(max_workers=min(4, len(batches))) as executor:
+        futures = {executor.submit(_summarize_batch, index, batch): index for index, batch in enumerate(batches, 1)}
+        for future in as_completed(futures):
+            index, note = future.result()
+            results[index] = note
+            completed += 1
+            if progress:
+                progress.progress(completed / len(batches), text=f"Analyzing source batch {completed}/{len(batches)}...")
+    notes = [f"### Source batch {index}\n{results[index]}" for index in sorted(results) if results[index]]
     if not notes:
         return ""
     evidence = "\n\n".join(notes)
-    final_prompt = f"""Create the final {detail_level.lower()} study guide for a student preparing for a Computer Networks quiz.
+    final_prompt = f"""Create the final {detail_level.lower()} study guide for a student preparing for a quiz on this material. Base the subject, terminology, and scope strictly on the source-batch notes below — do not assume any particular course or field (it may or may not be about computer networks, software engineering, or any other topic; follow the actual content).
 {style}
 {('Focus especially on: ' + focus) if focus else ''}
 
 Use all source-batch notes below. Do not drop topics merely because they appeared in a later batch. Merge duplicates, keep important distinctions, and explicitly cover the full material. The source batches are complete; never write phrases such as “later slides not provided” or “remaining slides missing”, and never invent slide ranges that are not present in the source.
 Use this structure:
 1. Course/lecture overview
-2. Complete academic topic map (every major networking topic in source order; omit administrative slide material)
+2. Complete academic topic map (every major topic in source order; omit administrative slide material)
 3. Topic explanations with clear definitions and intuition
 4. Protocols, architectures, processes, and step-by-step mechanisms
 5. All formulas/equations, with every symbol, unit, and when-to-use explanation
@@ -1348,10 +1361,52 @@ SOURCE-BATCH NOTES:
     return remove_nonacademic_topic_rows(make_formulas_readable(result))
 
 
+FALLBACK_SUMMARY_SUGGESTIONS = [
+    ("🔍 Go deeper", "Pick the single most important topic in this material and explain it in more depth with an example"),
+    ("🧩 Common confusions", "Explain the comparisons and common points of confusion in this material"),
+    ("📝 Practice quiz", "Give me 5 practice quiz questions based on this material"),
+]
+
+
+def generate_summary_suggestions(summary_text, topic_map_text=""):
+    """Pick three follow-up study prompts FROM the actual generated summary.
+
+    These used to be a fixed, hardcoded list of Computer Networks topics
+    (packet vs circuit switching, etc.) that showed up under every summary
+    regardless of the uploaded subject — that was the "suggestions show
+    networking even for a Software Engineering lecture" bug. This grounds
+    the suggestions in whatever the summary actually covers instead.
+    """
+    prompt = f"""Below is a study summary generated from a student's uploaded material. Suggest exactly 3 short, specific follow-up study actions a student could take next, each one in English and drawn from topics that ACTUALLY appear in this summary (never invent a topic that is not present).
+
+Return ONLY a valid JSON array of 3 objects shaped like:
+{{"label": "short button label with one emoji, max 4 words", "request": "a full natural-language study request, e.g. 'Explain X in more depth with an example'"}}
+
+Vary the three: e.g. one asks to go deeper on a specific topic named in the summary, one asks about a comparison/common confusion if the summary has one, one asks for a short practice quiz on the material. Use the real topic names from the summary, not generic placeholders.
+
+SUMMARY:
+{summary_text[:6000]}
+{topic_map_text[:2000]}"""
+    raw = ask_groq(prompt, max_tokens=500)
+    suggestions = []
+    if raw:
+        try:
+            match = re.search(r"\[.*\]", raw, re.S)
+            data = json.loads(match.group(0) if match else raw)
+            for item in data:
+                label = str(item.get("label", "")).strip()
+                request = str(item.get("request", "")).strip()
+                if label and request:
+                    suggestions.append((label[:40], request[:200]))
+        except Exception:
+            suggestions = []
+    return suggestions[:3] if suggestions else FALLBACK_SUMMARY_SUGGESTIONS
+
+
 def explain_next_topic(topic):
     """Give a focused second-pass lesson or quiz from a clickable study suggestion."""
     context = get_relevant_chunks(st.session_state.pdf_text, topic, max_chunks=6, max_context_chars=12000)
-    prompt = f"""Explain the Computer Networks topic below as a focused follow-up lesson.
+    prompt = f"""Explain the topic below as a focused follow-up lesson, strictly using the subject matter of the source material provided (whatever course or field it is — do not assume any particular subject).
 Topic requested: {topic}
 
 Use the source material as the primary authority. Include:
@@ -1373,9 +1428,9 @@ SOURCE CONTEXT:
 def generate_video_overview_plan(video_format, language, topic, custom_topic, visual_style):
     """Create a NotebookLM-style narrated video storyboard grounded in the workspace."""
     requested_topic = custom_topic.strip() if topic == "Custom topic" and custom_topic.strip() else topic
-    context_query = requested_topic if requested_topic != "Full course" else "all major academic networking topics definitions processes formulas"
+    context_query = requested_topic if requested_topic != "Full course" else "all major academic topics definitions processes formulas in this material"
     context = get_relevant_chunks(st.session_state.pdf_text, context_query, max_chunks=12, max_context_chars=18000)
-    prompt = f"""Create a NotebookLM-style educational video overview plan grounded strictly in the uploaded Computer Networks study material.
+    prompt = f"""Create a NotebookLM-style educational video overview plan grounded strictly in the uploaded study material below, covering whatever subject it actually is (do not assume any particular course or field).
 Format: {video_format}
 Spoken language: {language}
 Topic: {requested_topic}
@@ -1698,7 +1753,7 @@ def _video_teacher_narration(plan, config):
     prompt = f"""Extract or rewrite the teacher narration from the video plan below.
 Return ONLY the words the teacher should speak. Do not include a title, headings, timestamps, scene labels, emojis, bullets, numbering, visual directions, audience notes, copyright information, or calls to download anything.
     Teach in this order: define the key concepts first; connect them into one mental model; explain the most important process or mechanism step by step; explain one formula or example if present; finish with three short recap ideas. Sound like a patient university instructor, using transitions and intuition instead of reading a list. Use short sentences and natural pauses after definitions and formulas. Pronounce technical terms clearly: say abbreviations such as IP, TCP, and DNS as separate letters when appropriate, and say formulas in words as well as symbols.
-The narration must be about 900–1100 words, suitable for a 6–9 minute video and never more than 10 minutes. Use plain readable spoken language. Keep networking terms and formulas accurate.
+The narration must be about 900–1100 words, suitable for a 6–9 minute video and never more than 10 minutes. Use plain readable spoken language. Keep technical terms and formulas accurate.
 Requested language: {language}
 VIDEO PLAN:
 {plan[:26000]}"""
@@ -1800,7 +1855,7 @@ def render_video_overview_mp4(plan, config, speaking_rate=1.0):
     visual_style = config.get("visual_style", "Clean academic slides")
     spoken = clean_video_narration(_video_teacher_narration(plan, config))
     if language == "Urdu-English mix":
-        bilingual_prompt = f"Rewrite this narration as a clear teacher-led Urdu-English lesson for a Pakistani university student. Use natural Urdu for explanations and transitions, but retain Computer Networks terms and protocol names in English. Spell out abbreviations when first introduced, add punctuation for natural pauses, and say every formula in words after showing its plain-text form. Return spoken narration only: no headings, timestamps, emojis, bullets, scene labels, or metadata. Keep it under 1100 words.\n\n{spoken[:9000]}"
+        bilingual_prompt = f"Rewrite this narration as a clear teacher-led Urdu-English lesson for a Pakistani university student. Use natural Urdu for explanations and transitions, but retain technical terms and proper nouns from the source material in English. Spell out abbreviations when first introduced, add punctuation for natural pauses, and say every formula in words after showing its plain-text form. Return spoken narration only: no headings, timestamps, emojis, bullets, scene labels, or metadata. Keep it under 1100 words.\n\n{spoken[:9000]}"
         spoken = clean_video_narration(ask_groq(bilingual_prompt, max_tokens=3000)) or spoken
     with tempfile.TemporaryDirectory(prefix="studient-video-") as workdir:
         narration_path = os.path.join(workdir, "narration.mp3")
@@ -1961,7 +2016,11 @@ FLASHCARD_SYSTEM_MSG = (
     'to understand the concept visually). '
     "Choose the visual_type that best represents the concept. "
     "For process use ordered steps. "
-    "For comparison use two sides separated with 'VS'. "
+    "For comparison, visual_items MUST contain at least one item for the first concept, "
+    "then a standalone item that is exactly 'VS' (nothing else on that item), then at least "
+    "one item for the second concept — for example: [\"Side A point 1\", \"Side A point 2\", \"VS\", "
+    "\"Side B point 1\", \"Side B point 2\"]. Never omit the standalone 'VS' item, and never leave "
+    "either side with zero items. "
     "For timeline use chronological events. "
     "For formula use the important equation or relationship. "
     "For definition use the central concept plus supporting points. "
@@ -2119,23 +2178,34 @@ def render_visual_artifact(card):
 
     # ---------------- COMPARISON ----------------
     elif visual_type == "comparison":
-        left_items = []
-        right_items = []
+        # The model is told to separate the two sides with a literal "VS"
+        # item (see FLASHCARD_SYSTEM_MSG), but this used to split items by
+        # even/odd index instead and ignore that marker entirely. Whenever
+        # the two sides had an uneven number of points, that alternating
+        # split scrambled them — and could leave one whole side empty —
+        # which is exactly the "side B shows nothing" bug.
+        vs_index = next((i for i, item in enumerate(items) if item.strip().upper() == "VS"), None)
+        if vs_index is not None:
+            left_items = items[:vs_index]
+            right_items = items[vs_index + 1:]
+        else:
+            split_at = max(1, (len(items) + 1) // 2)
+            left_items, right_items = items[:split_at], items[split_at:]
 
-        for index, item in enumerate(items):
-            if index % 2 == 0:
-                left_items.append(item)
-            else:
-                right_items.append(item)
+        label_left, label_right = "Concept A", "Concept B"
+        vs_match = re.search(r"^(.*?)\s+(?:vs\.?|versus)\s+(.*)$", card.get("visual_title", ""), re.I)
+        if vs_match:
+            label_left = vs_match.group(1).strip()[:40] or label_left
+            label_right = vs_match.group(2).strip()[:40] or label_right
 
         pieces.append('<div class="sm-comparison">')
 
         pieces.append(
             '<div class="sm-comparison-column">'
-            '<div class="sm-comparison-title">Concept A</div>'
+            f'<div class="sm-comparison-title">{esc(label_left)}</div>'
         )
 
-        for item in left_items:
+        for item in left_items or ["—"]:
             pieces.append(
                 f'<div class="sm-comparison-item">• {item}</div>'
             )
@@ -2144,10 +2214,10 @@ def render_visual_artifact(card):
 
         pieces.append(
             '<div class="sm-comparison-column">'
-            '<div class="sm-comparison-title">Concept B</div>'
+            f'<div class="sm-comparison-title">{esc(label_right)}</div>'
         )
 
-        for item in right_items:
+        for item in right_items or ["—"]:
             pieces.append(
                 f'<div class="sm-comparison-item">• {item}</div>'
             )
@@ -2798,6 +2868,7 @@ defaults = {
     "quiz_questions": None, "quiz_index": 0, "quiz_answers": [], 
     "quiz_locked": False, "quiz_finished": False, "mind_map": None,
     "summary_text": "", "summary_detail": "Brief", "topic_explanation": "", "followup_request": "", "summary_audio": None,
+    "summary_suggestions": None,
     "theme_mode": "Light", "reduced_motion": False,
     "high_contrast": False, "font_scale": "Default",
     "flashcards": None, "flashcard_status": {},
@@ -3070,15 +3141,18 @@ with tabs[0]:
     with summary_col1:
         summary_detail = st.selectbox("Summary depth", ["Brief", "Detailed", "Exam-focused"], index=0, key="summary_mode")
     with summary_col2:
-        summary_focus = st.text_input("Optional focus", placeholder="e.g. OSI model, TCP/IP, subnetting, routing formulas", key="summary_focus")
+        summary_focus = st.text_input("Optional focus", placeholder="e.g. a specific chapter, topic, or formula to emphasize", key="summary_focus")
     if st.button("✨ Generate Summary", key="gen_summary"): 
         with st.spinner("Studient AI is analyzing your material..."): 
             progress = st.progress(0, text="Preparing all source sections...")
             result = generate_comprehensive_summary(st.session_state.pdf_text, summary_detail, summary_focus, progress)
             progress.progress(1.0, text="Complete study guide ready")
-        if result: 
+        if result:
             st.session_state.summary_text = result
             st.session_state.summary_audio = None
+            st.session_state.summary_suggestions = generate_summary_suggestions(result)
+            st.session_state.topic_explanation = ""
+            st.session_state.followup_request = ""
             save_summary(st.session_state.document_name, result)
             st.rerun()
             html(f'<div class="sm-answer"><div class="title">📚 AI Study Summary</div></div>') 
@@ -3090,11 +3164,7 @@ with tabs[0]:
         st.markdown(st.session_state.summary_text)
         st.download_button("⬇️ Download summary as Markdown", st.session_state.summary_text, file_name="studient-summary.md", mime="text/markdown", key="download_summary_markdown_saved")
         html('<div class="sm-card"><h3>🧭 What should we explore next?</h3><p>Start with this brief map, then choose one topic for a deeper NotebookLM-style explanation.</p></div>')
-        suggestions = [
-            ("🔁 Packet vs Circuit", "Explain the difference between packet switching and circuit switching in detail"),
-            ("⚙️ Store-and-Forward", "Show me the step-by-step mechanism of store-and-forward switching with its formula"),
-            ("📝 Network Edge & Core Quiz", "Give me 5 practice quiz questions based on the network edge and core topics"),
-        ]
+        suggestions = st.session_state.get("summary_suggestions") or FALLBACK_SUMMARY_SUGGESTIONS
         suggestion_cols = st.columns(3)
         for col, (label, request) in zip(suggestion_cols, suggestions):
             with col:
@@ -3161,9 +3231,9 @@ with tabs[2]:
         if questions: 
             st.session_state.mcq_questions = questions
             for i, q in enumerate(questions, 1): 
-                with st.expander(f"Q{i}. {q['question']}"): 
-                    for letter, opt in q["options"].items(): 
-                        st.write(f"**{letter})** {opt}") 
+                with st.expander(f"Q{i}. {q['question']}"):
+                    for option_letter, opt in q["options"].items():
+                        st.write(f"**{option_letter})** {opt}")
                     st.success(f"Correct Answer: {q['correct']} — {q['explanation']}") 
             mcq_docx = make_questions_docx(questions, "Studient AI MCQs")
             if mcq_docx:
@@ -3660,7 +3730,16 @@ with tabs[16]:
     with video_col1:
         video_format = st.selectbox("Video format", ["Explainer lesson", "Quick revision", "Exam-cram overview", "Process walkthrough", "Topic comparison", "Quiz video"], key="video_format")
         video_language = st.selectbox("Narration language", ["English", "Urdu", "Urdu-English mix", "Hindi"], key="video_language")
-        video_topic = st.selectbox("Topic", ["Full course", "Network edge and core", "Packet switching vs circuit switching", "Store-and-forward switching", "OSI and TCP/IP layers", "Custom topic"], key="video_topic")
+        # Topic choices come from the headings of the generated summary (if any),
+        # so they match the uploaded subject instead of a fixed networking list.
+        _video_topic_choices = []
+        for _line in (st.session_state.get("summary_text") or "").splitlines():
+            _m = re.match(r"^\s*#{2,4}\s*(?:\d+[\.\)]\s*)?(?:[^\w\s]+\s*)*(.+?)\s*$", _line)
+            if _m:
+                _name = re.sub(r"[*_`]", "", _m.group(1)).strip()
+                if 3 <= len(_name) <= 70 and _name not in _video_topic_choices and not re.search(r"overview|topic map|formulas|quiz-ready|revision|comparisons|examples|purpose|explanations|protocols|source batch", _name, re.I):
+                    _video_topic_choices.append(_name)
+        video_topic = st.selectbox("Topic", ["Full course"] + _video_topic_choices[:8] + ["Custom topic"], key="video_topic")
     with video_col2:
         video_custom_topic = st.text_input("Custom topic", placeholder="Used when Topic is Custom topic", disabled=video_topic != "Custom topic", key="video_custom_topic")
         video_visual_style = st.selectbox("Visual style", ["Clean academic slides", "Animated network diagrams", "Studient glassmorphism", "Whiteboard teaching", "Dark lecture style", "Minimal revision cards"], key="video_visual_style")
