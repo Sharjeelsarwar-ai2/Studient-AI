@@ -11,3 +11,5 @@ Pillow
 streamlit-autorefresh
 cryptography
 edge-tts
+arabic-reshaper
+python-bidi
