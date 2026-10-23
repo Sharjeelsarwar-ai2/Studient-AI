@@ -1180,7 +1180,9 @@ def make_formulas_readable(text):
     text = text.replace("\\leq", " ≤ ").replace("\\geq", " ≥ ").replace("\\rightarrow", " → ")
     text = text.replace("\\approx", " ≈ ").replace("\\Delta", "Δ").replace("\\alpha", "α").replace("\\beta", "β")
     text = text.replace("\\", "")
-    text = re.sub(r"\s+", " ", text)
+    # Collapse only runs of spaces/tabs; collapsing newlines too flattened the whole
+    # markdown summary into one line, which rendered as a single giant heading.
+    text = re.sub(r"[ \t]+", " ", text)
     return text.strip()
 
 
@@ -1296,7 +1298,7 @@ def generate_comprehensive_summary(text, detail_level="Detailed", focus="", prog
     sections = source_sections(text)
     # Exam-focused mode is optimized for faster revision: fewer, larger map passes
     # still cover every slide, while detailed mode keeps smaller teaching batches.
-    batch_size = (12 if detail_level == "Brief" else 9 if detail_level == "Exam-focused" else 7) if any("[SLIDE " in section for section in sections) else 4
+    batch_size = (18 if detail_level == "Brief" else 12 if detail_level == "Exam-focused" else 8) if any("[SLIDE " in section for section in sections) else 4
     batches = ["\n\n".join(sections[i:i + batch_size]) for i in range(0, len(sections), batch_size)]
     style = {
         "Brief": "Keep the final guide compact but cover every major topic, definition, formula, and process.",
@@ -1313,7 +1315,7 @@ Return structured markdown notes only.
 
 SOURCE BATCH:
 {batch[:14000]}"""
-        note = ask_groq(prompt, max_tokens=900 if detail_level == "Brief" else 1500 if detail_level == "Exam-focused" else 1900)
+        note = ask_groq(prompt, max_tokens=800 if detail_level == "Brief" else 1300 if detail_level == "Exam-focused" else 1700)
         return index, note
 
     # Each batch is summarized independently, so running them concurrently
@@ -1322,7 +1324,7 @@ SOURCE BATCH:
     # main reason summaries felt slow.
     results = {}
     completed = 0
-    with ThreadPoolExecutor(max_workers=min(4, len(batches))) as executor:
+    with ThreadPoolExecutor(max_workers=max(1, min(6, len(batches)))) as executor:
         futures = {executor.submit(_summarize_batch, index, batch): index for index, batch in enumerate(batches, 1)}
         for future in as_completed(futures):
             index, note = future.result()
@@ -3144,9 +3146,7 @@ with tabs[0]:
         summary_focus = st.text_input("Optional focus", placeholder="e.g. a specific chapter, topic, or formula to emphasize", key="summary_focus")
     if st.button("✨ Generate Summary", key="gen_summary"): 
         with st.spinner("Studient AI is analyzing your material..."): 
-            progress = st.progress(0, text="Preparing all source sections...")
-            result = generate_comprehensive_summary(st.session_state.pdf_text, summary_detail, summary_focus, progress)
-            progress.progress(1.0, text="Complete study guide ready")
+            result = generate_comprehensive_summary(st.session_state.pdf_text, summary_detail, summary_focus)
         if result:
             st.session_state.summary_text = result
             st.session_state.summary_audio = None
