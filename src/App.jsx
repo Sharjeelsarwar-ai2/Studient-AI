@@ -670,7 +670,7 @@ export default function App() {
                   const d = await generate('difficulty', ctx, {})
                   setDifficultyText(removeNonacademicTopicRows(makeFormulasReadable(d.result || '')))
                 })} busy={busy} />}
-                {tab === 'test' && <PracticeTestTab {...{ quiz, quizIndex, setQuizIndex, quizAnswers, quizLocked, setQuizLocked, quizFinished, choice, setChoice, startTest, submitAnswer, finishTest, resetQuiz, incorrectQs, setQuiz, setQuizAnswers, setQuizFinished, setTestStartedAt, setTestTimedOut, remaining, settings, testResult, testTimedOut, docName }} />}
+                {tab === 'test' && <PracticeTestTab {...{ quiz, quizIndex, setQuizIndex, quizAnswers, quizLocked, setQuizLocked, quizFinished, choice, setChoice, startTest, submitAnswer, finishTest, resetQuiz, incorrectQs, setQuiz, setQuizAnswers, setQuizFinished, setTestStartedAt, setTestTimedOut, remaining, settings, testResult, testTimedOut, docName, busy }} />}
                 {tab === 'analytics' && <AnalyticsTab data={analytics} history={docHistory} />}
                 {tab === 'mindmap' && <MindMapTab {...{ mindMap, setMindMap, docText, run, busy, mmRef }} />}
                 {tab === 'plan' && <PlanTab {...{ studyPlan, setStudyPlan, docText, run, busy }} />}
@@ -693,17 +693,6 @@ export default function App() {
         <footer className="footer">🧠 StudientAI — All rights reserved to Sharjeelsarwar-ai2</footer>
       </main>
       </div>
-      {busy && (
-        <div className="gen-overlay" role="status" aria-live="polite">
-          <div className="gen-card">
-            <div className="gen-spinner" aria-hidden="true" />
-            <div className="gen-text">
-              <b>Studient is {busy.charAt(0).toLowerCase() + busy.slice(1)}</b>
-              <span>Your result will appear right here when it's ready.</span>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -784,6 +773,21 @@ function Launchpad({ sections, onOpen }) {
   )
 }
 
+/* ChatGPT-style generating indicator: a rounded strip with animated three
+   dots, rendered directly below the executing button. Replaces the old
+   centred modal. Renders only while a generation is running; the form
+   above the button never moves. */
+function GenStrip({ busy }) {
+  if (!busy) return null
+  const label = busy.charAt(0).toLowerCase() + busy.slice(1)
+  return (
+    <div className="gen-strip" role="status" aria-live="polite">
+      <span className="gen-dots" aria-hidden="true"><i /><i /><i /></span>
+      <span>Studient is {label}</span>
+    </div>
+  )
+}
+
 function SummaryTab(p) {
   return (
     <div>
@@ -798,6 +802,7 @@ function SummaryTab(p) {
         </label>
       </div>
       <button className="btn primary" onClick={p.genSummary} disabled={!!p.busy}>✨ Generate Summary</button>
+      <GenStrip busy={p.busy} />
       {p.summary && (
         <>
           <div className="answer-head">📚 AI Study Summary</div>
@@ -842,6 +847,7 @@ function SimpleGenTab({ title, caption, button, value, onGenerate, busy }) {
     <div>
       <h2>{title}</h2><p className="muted">{caption}</p>
       <button className="btn primary" onClick={onGenerate} disabled={!!busy}>{button}</button>
+      <GenStrip busy={busy} />
       {value && <Markdown text={value} />}
     </div>
   )
@@ -852,6 +858,7 @@ function TextGenTab({ title, caption, button, value, filename, onGenerate, busy 
     <div>
       <h2>{title}</h2><p className="muted">{caption}</p>
       <button className="btn primary" onClick={onGenerate} disabled={!!busy}>{button}</button>
+      <GenStrip busy={busy} />
       {value && <>
         <Markdown text={value} />
         <button className="btn" onClick={() => exportQuestionsDocx(value.split('\n').filter((l) => l.trim()), title.replace(/^[^\s]+\s/, ''), filename)}>⬇️ Export as DOCX</button>
@@ -875,6 +882,7 @@ function AskTab(p) {
         const d = await generate('ask', ctx, { question: p.askQuestion, useGeneralKnowledge: p.askGeneral })
         p.setAskAnswer(d.result || '')
       })} disabled={!!p.busy}>🤖 Ask Studient</button>
+      <GenStrip busy={p.busy} />
       {p.askAnswer && <><div className="answer-head">{p.askGeneral ? '🤖 StudientAI Answer (PDF + general knowledge)' : '🤖 StudientAI Answer'}</div><Markdown text={p.askAnswer} /></>}
     </div>
   )
@@ -892,6 +900,7 @@ function FlashcardsTab(p) {
         const d = await generate('flashcards', ctx, { count: p.settings.questionCount, difficulty: p.settings.difficulty })
         if (d.result?.length) { p.setFlashcards(d.result) } else { throw new Error('GENERATION_FAILED') }
       })} disabled={!!p.busy}>✨ Generate Visual Flashcards</button>
+      <GenStrip busy={p.busy} />
       {p.flashcards && (
         <>
           <p className="alert ok">Created {p.flashcards.length} visual flashcards!</p>
@@ -926,6 +935,7 @@ function McqTab(p) {
         const d = await generate('quiz', ctx, { count: p.settings.questionCount, difficulty: p.settings.difficulty, category: 'Mixed' })
         if (d.result?.length) p.setMcqs(d.result)
       })} disabled={!!p.busy}>✨ Generate MCQs</button>
+      <GenStrip busy={p.busy} />
       {p.mcqs && p.mcqs.map((q, i) => (
         <details key={i} className="mcq"><summary>Q{i + 1}. {q.question}</summary>
           {Object.entries(q.options).map(([l, t]) => <p key={l}><b>{l})</b> {t}</p>)}
@@ -948,6 +958,7 @@ function QuestionsTab(p) {
         const lines = (d.result || '').split('\n').map((l) => l.trim()).filter(Boolean)
         p.setImportantQs(lines.slice(0, p.settings.questionCount))
       })} disabled={!!p.busy}>✨ Generate Important Questions</button>
+      <GenStrip busy={p.busy} />
       {p.importantQs && p.importantQs.map((q, i) => <div key={i} className="question-row"><div className="label">Question {i + 1}</div><p>{q}</p></div>)}
       {p.importantQs && <button className="btn" onClick={() => exportQuestionsDocx(p.importantQs, 'Important Exam Questions', 'studient-important-questions.docx')}>⬇️ Export questions as DOCX</button>}
     </div>
@@ -962,6 +973,7 @@ function PracticeTestTab(p) {
         <p className="muted">Answers are hidden until you submit each question — no peeking.</p>
         {p.incorrectQs.length > 0 && <button className="btn" onClick={() => { p.setQuiz(p.incorrectQs); p.setQuizIndex(0); p.setQuizAnswers([]); p.setQuizLocked(false); p.setQuizFinished(false); p.setChoice(''); p.setTestStartedAt(Date.now()); p.setTestTimedOut(false) }}>🔁 Retake Incorrect Questions</button>}
         <button className="btn primary rose" onClick={p.startTest}>🚀 Start New Test</button>
+        <GenStrip busy={p.busy} />
       </div>
     )
   }
@@ -1070,6 +1082,7 @@ function MindMapTab(p) {
         if (d.result) p.setMindMap(d.result)
         else throw new Error('GENERATION_FAILED')
       })} disabled={!!p.busy}>✨ Generate Interactive Mind Map</button>
+      <GenStrip busy={p.busy} />
       {p.mindMap && (
         <>
           <MindMap map={p.mindMap} svgRef={p.mmRef} />
@@ -1128,6 +1141,7 @@ function PlanTab(p) {
         const d = await generate('study-plan', ctx, { examDate, daysLeft, targetGrade: grade, hoursPerDay: hours, weakSubjects: weak, schedule: schedule.join(', ') })
         p.setStudyPlan(d.result || '')
       })} disabled={!!p.busy}>✨ Generate my study plan</button>
+      <GenStrip busy={p.busy} />
       {p.studyPlan && <><div className="answer-head">🗓️ Your personalized study plan</div><Markdown text={p.studyPlan} />
         <button className="btn" onClick={() => downloadText(p.studyPlan, 'studient-study-plan.md', 'text/markdown')}>⬇️ Download study plan</button></>}
     </div>
@@ -1168,6 +1182,7 @@ function TutorTab(p) {
         })} disabled={!!p.busy}>🧑‍🏫 Ask tutor</button>
         {p.tutorMessages.length > 0 && <button className="btn" onClick={() => p.setTutorMessages([])}>🧹 Clear tutor conversation</button>}
       </div>
+      <GenStrip busy={p.busy} />
     </div>
   )
 }
@@ -1192,6 +1207,7 @@ function MaterialsTab(p) {
         const d = await generate('material', ctx, { materialType: type, focus, difficulty: depth })
         p.setMaterial(d.result || ''); p.setMaterialType(type)
       })} disabled={!!p.busy}>✨ Generate study material</button>
+      <GenStrip busy={p.busy} />
       {p.material && <><div className="answer-head">🧰 {p.materialType}</div><Markdown text={p.material} />
         <button className="btn" onClick={() => downloadText(p.material, `studient-${p.materialType.toLowerCase().replace(/ /g, '-')}.md`, 'text/markdown')}>⬇️ Download study material</button></>}
     </div>
@@ -1226,6 +1242,7 @@ function PaperTab(p) {
         const d = await generate('sample-paper', ctx, { durationMinutes: duration, totalMarks: marks, difficulty, sectionMix: sections.join(', '), instructions })
         p.setSamplePaper(d.result || '')
       })} disabled={!!p.busy}>✨ Generate full sample paper</button>
+      <GenStrip busy={p.busy} />
       {p.samplePaper && <><div className="answer-head">📝 University sample paper with model answers</div><Markdown text={p.samplePaper} />
         <button className="btn" onClick={() => downloadText(p.samplePaper, 'studient-university-sample-paper.md', 'text/markdown')}>⬇️ Download sample paper</button></>}
     </div>
@@ -1271,6 +1288,7 @@ function VideoTab(p) {
         p.setVideoPlan(removeNonacademicTopicRows(makeFormulasReadable(d.result || '')))
         p.setVideoSlides(null); p.setVideoNarration('')
       })} disabled={!!p.busy}>🎬 Generate Video Overview Plan</button>
+      <GenStrip busy={p.busy} />
       {p.videoPlan && (
         <>
           <div className="answer-head">🎬 Your Video Overview Storyboard</div>
@@ -1303,6 +1321,7 @@ function VideoTab(p) {
               }
             })} disabled={!!p.busy}>🎞️ Present as narrated slides</button>
           </div>
+          <GenStrip busy={p.busy} />
           {p.videoSlides && <VideoPlayer slides={p.videoSlides} narration={p.videoNarration} language={vc.language} rate={vc.rate} onRateChange={(r) => setVc({ rate: r })} topic={topic} />}
         </>
       )}
