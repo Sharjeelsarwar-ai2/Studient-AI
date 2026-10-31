@@ -21,7 +21,7 @@ export function loadReviewState() { return loadJson(K.review, {}) }
 export function saveReviewState(s) { saveJson(K.review, s) }
 export function loadSettings() {
   return loadJson(K.settings, {
-    theme: 'Light', reducedMotion: false, highContrast: false, fontScale: 'Default',
+    theme: 'System', reducedMotion: false, highContrast: false, fontScale: 'Default',
     workspaceName: 'My Study Workspace', privacyMode: false, retentionDays: 0,
     questionCount: 5, difficulty: 'Medium', testCategory: 'Mixed',
     timedMode: false, testTimeLimit: 10, negativeMarking: false,

@@ -70,6 +70,8 @@ export default function App() {
   const [showPreview, setShowPreview] = useState(false)
   const [view, setView] = useState('home') // 'home' (dashboard + launchpad) | 'tool'
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [switcherQuery, setSwitcherQuery] = useState('')
   const [dragOver, setDragOver] = useState(false)
 
   const [summary, setSummary] = useState('')
@@ -122,12 +124,36 @@ export default function App() {
   useEffect(() => { checkHealth().then(setHealth) }, [])
   useEffect(() => { saveSettings(settings) }, [settings])
   useEffect(() => { saveReviewState(reviewState) }, [reviewState])
+  // System (Auto) theme: follow the OS setting and react live if it changes while the app is open
+  const [systemDark, setSystemDark] = useState(() => typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches)
   useEffect(() => {
-    document.documentElement.dataset.theme = settings.theme === 'Dark' ? 'dark' : 'light'
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = (e) => setSystemDark(e.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+  useEffect(() => {
+    const dark = settings.theme === 'Dark' || (settings.theme === 'System' && systemDark)
+    document.documentElement.dataset.theme = dark ? 'dark' : 'light'
     document.documentElement.dataset.font = settings.fontScale
     document.documentElement.dataset.contrast = settings.highContrast ? 'high' : 'normal'
     document.documentElement.dataset.motion = settings.reducedMotion ? 'reduced' : 'full'
-  }, [settings])
+  }, [settings, systemDark])
+
+  // Quick switcher: Ctrl/Cmd+K opens or closes, Escape closes
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        if (!switcherOpen) setSwitcherQuery('')
+        setSwitcherOpen(!switcherOpen)
+      } else if (e.key === 'Escape' && switcherOpen) {
+        setSwitcherOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [switcherOpen])
 
   // Practice-test countdown (1s tick, same behaviour as st_autorefresh heartbeat)
   useEffect(() => {
@@ -346,6 +372,7 @@ export default function App() {
           ))}
         </nav>
         <div className="topbar-actions">
+          <button className="switcher-btn" onClick={() => { setSwitcherQuery(''); setSwitcherOpen(true) }} aria-expanded={switcherOpen} aria-label="Quick switcher — jump to any tool" title="Jump to any tool (Ctrl+K)">🧭 Tools <kbd>Ctrl K</kbd></button>
           <label className="upload-mini" htmlFor="studient-file-input">📁 Upload</label>
           <div className={`key-badge ${health.configured ? 'ok' : 'bad'}`}>
             {health.stub ? '🧪 Stub mode (local test)' : health.configured ? '● AI ready' : '● API key not configured'}
@@ -364,7 +391,7 @@ export default function App() {
             </div>
             <div className="drawer-body">
               <label className="field">Appearance
-                <select value={settings.theme} onChange={(e) => updateSettings({ theme: e.target.value })}><option>Light</option><option>Dark</option></select>
+                <select value={settings.theme} onChange={(e) => updateSettings({ theme: e.target.value })}><option value="Light">Light</option><option value="Dark">Dark</option><option value="System">System (follows device)</option></select>
               </label>
               <label className="check"><input type="checkbox" checked={settings.reducedMotion} onChange={(e) => updateSettings({ reducedMotion: e.target.checked })} /> Reduce animations</label>
               <label className="check"><input type="checkbox" checked={settings.highContrast} onChange={(e) => updateSettings({ highContrast: e.target.checked })} /> High contrast</label>
@@ -458,7 +485,54 @@ export default function App() {
         {!health.configured && !health.stub && (
           <div className="alert warn big key-banner">⚠️ <b>API key not configured</b> — add <code>GROQ_API_KEY</code> in Vercel Settings → Environment Variables, then redeploy. You can still upload documents and explore the interface, but AI generation will not run.</div>
         )}
-        {health.stub && <div className="alert warn big">🧪 Stub mode is on (STUDIENT_STUB_GROQ=1) — responses are canned test data, not real AI output. Turn it off for real use.</div>}
+        {switcherOpen && (
+        <div className="switcher-overlay" onClick={() => setSwitcherOpen(false)}>
+          <div className="switcher" role="dialog" aria-modal="true" aria-label="Jump to a tool" onClick={(e) => e.stopPropagation()}>
+            <div className="switcher-search">
+              <span aria-hidden="true">🔍</span>
+              <input autoFocus value={switcherQuery} onChange={(e) => setSwitcherQuery(e.target.value)} placeholder="Jump to a tool — try “flashcards” or “test”…" aria-label="Search tools" />
+              <button className="icon-btn switcher-close" onClick={() => setSwitcherOpen(false)} aria-label="Close quick switcher">✕</button>
+            </div>
+            <div className="switcher-list">
+              {SECTIONS.map((s) => {
+                const q = switcherQuery.trim().toLowerCase()
+                const items = s.tabs.filter((t) => !q || (t.label + ' ' + t.desc).toLowerCase().includes(q))
+                if (!items.length) return null
+                return (
+                  <div key={s.id} className="switcher-fam" data-accent={s.accent}>
+                    <div className="switcher-fam-label">{s.label} <span>· {items.length} tool{items.length === 1 ? '' : 's'}</span></div>
+                    {items.map((t) => {
+                      const current = view === 'tool' && section === s.id && tab === t.id
+                      return (
+                        <button key={t.id} className={current ? 'switcher-item current' : 'switcher-item'} onClick={() => {
+                          setSwitcherOpen(false)
+                          if (!docText) {
+                            setError('Upload a document first — pick a tool after your study material is loaded.')
+                            document.getElementById('upload-card')?.scrollIntoView({ behavior: settings.reducedMotion ? 'auto' : 'smooth', block: 'center' })
+                            return
+                          }
+                          openTool(s.id, t.id)
+                        }}>
+                          <span className="switcher-icon">{t.label.split(' ')[0]}</span>
+                          <span className="switcher-text"><b>{t.label.replace(/^[^\s]+\s/, '')}</b><small>{t.desc}</small></span>
+                          {current && <span className="switcher-current">● Current</span>}
+                          <span className="switcher-arrow" aria-hidden="true">→</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )
+              })}
+              {SECTIONS.every((s) => !s.tabs.some((t) => (t.label + ' ' + t.desc).toLowerCase().includes(switcherQuery.trim().toLowerCase()))) && (
+                <div className="switcher-empty">No tools match “{switcherQuery}”.</div>
+              )}
+            </div>
+            <div className="switcher-foot"><span><kbd>Ctrl K</kbd> to open</span><span><kbd>Esc</kbd> to close</span><span>17 tools · 3 families</span></div>
+          </div>
+        </div>
+      )}
+
+      {health.stub && <div className="alert warn big">🧪 Stub mode is on (STUDIENT_STUB_GROQ=1) — responses are canned test data, not real AI output. Turn it off for real use.</div>}
         {error && <div className="alert error big">{error}</div>}
         {busy && <div className="alert info big">⏳ {busy}</div>}
 
