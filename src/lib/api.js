@@ -35,6 +35,7 @@ export function friendlyError(err) {
   if (err.code === 'KEY_NOT_CONFIGURED') {
     return 'API key not configured — add GROQ_API_KEY in Vercel Settings → Environment Variables, then redeploy.'
   }
+  if (err.code === 'EMPTY_MINDMAP') return "Couldn't build the mind map — try again."
   if (err.code === 'GROQ_ERROR') return 'The AI service returned an error. Please try again in a moment.'
   return 'Something went wrong generating this. Please try again.'
 }

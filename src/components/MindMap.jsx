@@ -52,6 +52,10 @@ export default function MindMap({ map, svgRef }) {
   }, [])
   const expandAll = () => setOpenSet(new Set(collectPaths(map, '0', [])))
   const collapseAll = () => setOpenSet(new Set(['0']))
+  // Defensive guard: an invalid map must never render as a single unlabeled
+  // node. The tab validates before setting state, so this is a last resort.
+  const mapValid = map && typeof map === 'object' && typeof map.label === 'string' && map.label.trim()
+  if (!mapValid) return <div className="card"><p>Couldn&apos;t build the mind map — try again.</p></div>
   return (
     <div className="mm-shell" ref={svgRef}>
       <div className="mm-toolbar">

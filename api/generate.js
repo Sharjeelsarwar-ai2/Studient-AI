@@ -235,7 +235,16 @@ export default async function handler(req, res) {
     const raw = await callGroq(prompt, system, maxTokens)
     if (!raw) return res.status(200).json({ ok: true, result: '' })
     let result = raw
-    try { const p = post(raw); if (p !== undefined && p !== null) result = p } catch { /* keep raw */ }
+    try {
+      const p = post(raw)
+      if (p !== undefined && p !== null) result = p
+      // Mind map: an empty/invalid tree must NEVER fall through as a raw
+      // string — the client would render it as a single unlabeled node.
+      else if (task === 'mindmap') return res.status(502).json({ ok: false, error: 'EMPTY_MINDMAP' })
+    } catch {
+      if (task === 'mindmap') return res.status(502).json({ ok: false, error: 'EMPTY_MINDMAP' })
+      /* keep raw for other tasks */
+    }
     // Markdown tasks: apply the same formula/readability + non-academic cleanup as app.py.
     if (typeof result === 'string' && ['explain-topic', 'video-plan', 'study-plan', 'material', 'sample-paper', 'concepts', 'difficulty', 'ask', 'tutor'].includes(task)) {
       // Light-touch: formulas readability is applied client-side too; server keeps raw.

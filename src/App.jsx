@@ -1071,6 +1071,19 @@ function AnalyticsTab({ data, history }) {
   )
 }
 
+// A usable mind map is an object with a non-empty root label and at least
+// one labelled branch. Anything else (raw string, {title, children: []},
+// empty label) must never reach the tree — it renders as a single
+// unlabeled node, which looks like a successful empty map.
+function isValidMindMap(m) {
+  return !!(m && typeof m === 'object' && typeof m.label === 'string' && m.label.trim()
+    && Array.isArray(m.children) && m.children.length > 0
+    && m.children.some((c) => c && typeof c.label === 'string' && c.label.trim()))
+}
+function emptyMindMapError() {
+  const e = new Error('EMPTY_MINDMAP'); e.code = 'EMPTY_MINDMAP'; return e
+}
+
 function MindMapTab(p) {
   return (
     <div>
@@ -1078,9 +1091,20 @@ function MindMapTab(p) {
       <p className="muted">Turn your uploaded material into a visual, collapsible concept hierarchy.</p>
       <button className="btn primary" onClick={() => p.run('Mapping the key ideas in your document…', async () => {
         const ctx = getRelevantChunks(p.docText, 'main topics concepts definitions processes examples relationships causes effects overview', 10, 14000)
-        const d = await generate('mindmap', ctx, {})
-        if (d.result) p.setMindMap(d.result)
-        else throw new Error('GENERATION_FAILED')
+        const fetchMap = async () => {
+          const d = await generate('mindmap', ctx, {})
+          if (!isValidMindMap(d.result)) throw emptyMindMapError()
+          return d.result
+        }
+        let map = null
+        try { map = await fetchMap() }
+        catch (e) {
+          // One automatic retry for an empty/invalid map only — then the
+          // error below is shown with the Generate button as the retry.
+          if (e.code === 'EMPTY_MINDMAP') map = await fetchMap()
+          else throw e
+        }
+        p.setMindMap(map)
       })} disabled={!!p.busy}>✨ Generate Interactive Mind Map</button>
       <GenStrip busy={p.busy} />
       {p.mindMap && (
