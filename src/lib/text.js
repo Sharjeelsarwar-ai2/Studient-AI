@@ -10,6 +10,37 @@ export function cleanText(text) {
   return text.trim()
 }
 
+// Plain-text rendering for dashboard preview snippets: strip ALL markdown
+// markers so no raw markup (">", "#", "*", links, …) ever shows in a snippet.
+// Line-leading markers are stripped line by line (a "> Goal:" quote becomes
+// "Goal:"), then inline markup is removed; a genuine ">" inside a sentence
+// (e.g. "5 > 3") is left alone.
+export function stripMarkdown(text) {
+  if (!text) return ''
+  const lines = String(text).split('\n').map((line) => line
+    .replace(/^\s{0,3}#{1,6}\s+/, '')   // ATX heading
+    .replace(/^\s{0,3}>+\s?/, '')       // blockquote marker(s)
+    .replace(/^\s{0,3}[-*+]\s+/, '')    // unordered list marker
+    .replace(/^\s{0,3}\d+[.)]\s+/, '')  // ordered list marker
+    .replace(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/, '') // horizontal rule
+  )
+  return lines.join('\n')
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1') // images -> alt text
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')  // links -> link text
+    .replace(/`{1,3}([^`]+?)`{1,3}/g, '$1')   // inline code
+    .replace(/(\*\*|__)(.+?)\1/g, '$2')       // bold
+    .replace(/[#*_`]/g, '')                   // any leftover markers
+    .replace(/<[^>]+>/g, '')                  // stray HTML tags
+    // Legacy stored previews were collapsed to one line before saving, so a
+    // line-leading quote marker can survive mid-string ("> Goal:"). Remove a
+    // standalone ">" token that precedes a capitalised word (a quote remnant);
+    // a genuine comparison ("5 > 3", "a > b") has a digit/lowercase after it
+    // and is left alone.
+    .replace(/\s>\s(?=[A-Z])/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 export function makeFormulasReadable(text) {
   if (!text) return text
   text = text.replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, '($1 / $2)')

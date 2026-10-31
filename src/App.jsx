@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { extractFile } from './lib/extract.js'
 import { generate, checkHealth, friendlyError } from './lib/api.js'
-import { getRelevantChunks, sourceSections, cleanText, makeFormulasReadable, removeNonacademicTopicRows, cleanSpeechText, wordCount, sectionCount } from './lib/text.js'
+import { getRelevantChunks, sourceSections, cleanText, makeFormulasReadable, removeNonacademicTopicRows, cleanSpeechText, wordCount, sectionCount, stripMarkdown } from './lib/text.js'
 import { loadHistory, loadSummaries, loadReviewState, saveReviewState, loadSettings, saveSettings, saveAttempt, saveSummary, applyRetention, deleteLocalData, getReviewCard, rateReviewCard, dueReviewCards, analyticsSnapshot, dashboardSnapshot } from './lib/store.js'
 import { exportPdf, exportQuestionsDocx, exportFlashcardsCsv, exportFlashcardsPdf, exportStudyPack, exportUserData } from './lib/exports.js'
 import { downloadText } from './lib/util.js'
@@ -645,11 +645,6 @@ export default function App() {
               {currentSection.tabs.map((t) => <button key={t.id} className={tab === t.id ? 'tab-btn active' : 'tab-btn'} onClick={() => setTab(t.id)}>{t.label}</button>)}
             </nav>
             <div className="tab-body" key={tab} data-accent={currentSection.accent}>
-              {busy && (
-                <div className="skeleton" aria-hidden="true">
-                  <div className="skel-line w70" /><div className="skel-line w90" /><div className="skel-line w55" /><div className="skel-card" />
-                </div>
-              )}
                 {tab === 'summary' && <SummaryTab {...{ summary, summaryDetail, setSummaryDetail, summaryFocus, setSummaryFocus, genSummary, busy, suggestions, explainTopic, topicExplanation, followupRequest, speechLang, setSpeechLang, readAloud, speaking, docText, docName, flashcards, mindMap, studyPlan }} />}
                 {tab === 'concepts' && <SimpleGenTab title="🔍 Key Concepts" caption="Extract the concepts you should know before your exam." button="✨ Extract Key Concepts" value={concepts} onGenerate={() => run('Identifying key concepts…', async () => {
                   const ctx = getRelevantChunks(docText, 'main concepts important ideas definitions topics', 8)
@@ -683,6 +678,14 @@ export default function App() {
                 {tab === 'materials' && <MaterialsTab {...{ material, setMaterial, materialType, setMaterialType, docText, run, busy }} />}
                 {tab === 'paper' && <PaperTab {...{ samplePaper, setSamplePaper, docText, run, busy }} />}
                 {tab === 'video' && <VideoTab {...{ videoPlan, setVideoPlan, videoConfig, setVideoConfig, videoSlides, setVideoSlides, videoNarration, setVideoNarration, docText, summary, videoTopics, run, busy }} />}
+              {/* Loading skeleton lives in the results area (below the form /
+                Generate button, where the result will land) — never above the
+                form, so generating never pushes the form down. */}
+              {busy && (
+                <div className="skeleton" aria-hidden="true">
+                  <div className="skel-line w70" /><div className="skel-line w90" /><div className="skel-line w55" /><div className="skel-card" />
+                </div>
+              )}
             </div>
           </>
         )}
@@ -744,7 +747,7 @@ function Dashboard({ data }) {
           {data.recentDocs.length ? data.recentDocs.map(([n, s]) => <div key={n} className="dash-row"><span>📄 {n}</span><span>{(s || '').slice(0, 10) || 'Recently'}</span></div>) : <div className="muted">Upload a document to begin your study journey.</div>}
         </div>
         <div data-accent="coral"><div className="dash-sec">Recently generated summaries</div>
-          {data.recentSummaries.length ? data.recentSummaries.map((s, i) => <div key={i} className="dash-sum"><b>{s.document}</b><span>{s.preview}</span></div>) : <div className="muted">Your generated summaries will appear here.</div>}
+          {data.recentSummaries.length ? data.recentSummaries.map((s, i) => <div key={i} className="dash-sum"><b>{s.document}</b><span>{stripMarkdown(s.preview)}</span></div>) : <div className="muted">Your generated summaries will appear here.</div>}
         </div>
       </div>
     </section>

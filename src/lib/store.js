@@ -3,6 +3,8 @@
 // attempts and flashcard review state live in localStorage, honouring
 // private-session mode and retention.
 
+import { stripMarkdown } from './text.js'
+
 const K = {
   history: 'studient.history.v1',
   summaries: 'studient.summaries.v1',
@@ -44,7 +46,7 @@ export function saveAttempt(documentName, score, total, topicResults, startedAt,
 export function saveSummary(documentName, summary, privacyMode) {
   if (privacyMode) return
   const history = loadSummaries()
-  const plain = summary.replace(/[#*`_]/g, '').replace(/\s+/g, ' ').trim()
+  const plain = stripMarkdown(summary).slice(0, 280)
   history.push({ timestamp: new Date().toISOString().slice(0, 19), document: documentName, preview: plain.slice(0, 280) })
   saveJson(K.summaries, history.slice(-20))
 }
