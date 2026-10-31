@@ -12,17 +12,28 @@ import Flashcard from './components/Flashcards.jsx'
 import VideoPlayer from './components/VideoPlayer.jsx'
 
 const SECTIONS = [
-  { id: 'desk', label: '📚 Study Desk', sub: 'Read, ask, and understand your workspace', tabs: [
-    { id: 'summary', label: '📚 Summary' }, { id: 'concepts', label: '🔍 Key Concepts' }, { id: 'ask', label: '💬 Ask Workspace' },
+  { id: 'desk', label: '📚 Study Desk', accent: 'teal', sub: 'Read, ask, and understand your workspace', tabs: [
+    { id: 'summary', label: '📚 Summary', desc: 'A complete exam-ready learning guide from your documents.' },
+    { id: 'concepts', label: '🔍 Key Concepts', desc: 'The ideas you must know before your exam, explained.' },
+    { id: 'ask', label: '💬 Ask Workspace', desc: 'Ask anything — grounded in your PDF, or with general knowledge.' },
   ]},
-  { id: 'studio', label: '🎨 AI Studio', sub: 'Create, practice, and track progress', tabs: [
-    { id: 'flashcards', label: '🎴 Flashcards' }, { id: 'mcqs', label: '❓ MCQs' }, { id: 'questions', label: '📝 Questions' },
-    { id: 'long', label: '📖 Long Questions' }, { id: 'short', label: '🎯 Short Questions' }, { id: 'difficulty', label: '📊 Difficulty' },
-    { id: 'test', label: '🧪 Practice Test' }, { id: 'analytics', label: '📈 Analytics' }, { id: 'mindmap', label: '🧠 Mind Map' },
+  { id: 'studio', label: '🎨 AI Studio', accent: 'coral', sub: 'Create, practice, and track progress', tabs: [
+    { id: 'flashcards', label: '🎴 Flashcards', desc: 'Visual flip cards with Leitner spaced review.' },
+    { id: 'mcqs', label: '❓ MCQs', desc: 'Exam-style multiple choice with answers and explanations.' },
+    { id: 'questions', label: '📝 Questions', desc: 'The most important likely exam questions.' },
+    { id: 'long', label: '📖 Long Questions', desc: 'Detailed explain, discuss and compare questions.' },
+    { id: 'short', label: '🎯 Short Questions', desc: 'Definitions and fact-based short answers.' },
+    { id: 'difficulty', label: '📊 Difficulty', desc: 'Which topics need the most preparation.' },
+    { id: 'test', label: '🧪 Practice Test', desc: 'A timed, graded mock test with negative marking.' },
+    { id: 'analytics', label: '📈 Analytics', desc: 'Your scores, trends and weakest topics over time.' },
+    { id: 'mindmap', label: '🧠 Mind Map', desc: 'A visual, collapsible map of your key ideas.' },
   ]},
-  { id: 'learning', label: '🧠 AI Learning', sub: 'Plan, tutor, and generate exam-ready materials', tabs: [
-    { id: 'plan', label: '🗓️ Study Plan' }, { id: 'tutor', label: '🧑‍🏫 AI Tutor' }, { id: 'materials', label: '🧰 Study Materials' },
-    { id: 'paper', label: '📝 Sample Paper' }, { id: 'video', label: '🎥 Video Overview' },
+  { id: 'learning', label: '🧠 AI Learning', accent: 'gold', sub: 'Plan, tutor, and generate exam-ready materials', tabs: [
+    { id: 'plan', label: '🗓️ Study Plan', desc: 'A daily plan built around your exam date and goals.' },
+    { id: 'tutor', label: '🧑‍🏫 AI Tutor', desc: 'Learn through guided questions and hints.' },
+    { id: 'materials', label: '🧰 Study Materials', desc: 'Cheat sheets, glossaries, timelines and more.' },
+    { id: 'paper', label: '📝 Sample Paper', desc: 'A full university-style paper with an answer key.' },
+    { id: 'video', label: '🎥 Video Overview', desc: 'A narrated slide presentation of your course.' },
   ]},
 ]
 
@@ -57,6 +68,9 @@ export default function App() {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const [showPreview, setShowPreview] = useState(false)
+  const [view, setView] = useState('home') // 'home' (dashboard + launchpad) | 'tool'
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
 
   const [summary, setSummary] = useState('')
   const [summaryDetail, setSummaryDetail] = useState('Detailed')
@@ -130,8 +144,7 @@ export default function App() {
 
   const updateSettings = (patch) => setSettings((s) => ({ ...s, ...patch }))
 
-  const onFiles = async (e) => {
-    const files = [...(e.target.files || [])]
+  const handleFiles = async (files) => {
     if (!files.length) return
     setUploadError('')
     const total = files.reduce((n, f) => n + f.size, 0)
@@ -147,9 +160,21 @@ export default function App() {
       setDocs(next); setDocText(combined)
       setSummary(''); setTopicExplanation(''); setFollowupRequest(''); setFlashcards(null); setMindMap(null)
       resetQuiz()
+      setView('home')
     } catch (err) {
       setUploadError(err.message || 'Could not read the uploaded files.')
     } finally { setUploading(false) }
+  }
+
+  const onFiles = (e) => {
+    const files = [...(e.target.files || [])]
+    e.target.value = ''
+    handleFiles(files)
+  }
+
+  const onDropFiles = (e) => {
+    const files = [...(e.dataTransfer?.files || [])]
+    if (files.length) handleFiles(files)
   }
 
   function resetQuiz() {
@@ -272,33 +297,80 @@ export default function App() {
 
   const currentSection = SECTIONS.find((s) => s.id === section)
 
+  const openTool = (sectionId, tabId) => {
+    setSection(sectionId); setTab(tabId); setView('tool')
+    window.scrollTo({ top: 0, behavior: settings.reducedMotion ? 'auto' : 'smooth' })
+  }
+  const goHome = () => {
+    setView('home')
+    window.scrollTo({ top: 0, behavior: settings.reducedMotion ? 'auto' : 'smooth' })
+  }
+  const goFamily = (sectionId) => {
+    setSection(sectionId); setView('home')
+    document.getElementById('launchpad')?.scrollIntoView({ behavior: settings.reducedMotion ? 'auto' : 'smooth', block: 'start' })
+  }
+
+  const WorkspaceBar = () => (
+    <>
+              <div className="doc-bar"><div className="doc-name">📄 {docName} <span className="doc-type">WORKSPACE</span></div><div className="muted small">Ready for active learning</div></div>
+              <button className="btn ghost" onClick={() => setShowPreview(!showPreview)}>📄 {showPreview ? 'Hide' : 'Preview'} extracted document text</button>
+              {showPreview && (
+                <div className="card">
+                  {pptStats.length > 0 && <div className="alert info">PowerPoint extraction audit: <b>{readableSlides}/{totalSlides} slides contain readable text ({coverage}% text coverage)</b>. The AI summary uses all extracted slide sections, not only this preview.</div>}
+                  {coverage < 100 && totalSlides > 0 && <div className="alert warn">Some slides are visual-only. Their text cannot be recovered; export the deck to PDF and upload it for OCR if those slides contain important diagrams or screenshots.</div>}
+                  <textarea readOnly value={docText} rows={14} className="preview-text" aria-label="Complete extracted content" />
+                  <button className="btn" onClick={() => downloadText(docText, `${docName.replace(/\.[^.]+$/, '')}.txt`)}>⬇️ Download extracted text</button>
+                </div>
+              )}
+              <div className="metrics">
+                <div className="metric"><span className="chip">📖</span><span>Words</span><b>{words.toLocaleString()}</b></div>
+                <div className="metric"><span className="chip">🔤</span><span>Characters</span><b>{docText.length.toLocaleString()}</b></div>
+                <div className="metric"><span className="chip">🎯</span><span>Difficulty</span><b>{settings.difficulty}</b></div>
+              </div>
+    </>
+  )
+
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">🧠</span><div><div className="brand-name"><span>Studient</span> AI</div><span className="brand-sub">Personal study assistant</span></div></div>
-        <div className="topbar-note">Documents never leave your device except the selected text sent to Groq.</div>
-        <div className={`key-badge ${health.configured ? 'ok' : 'bad'}`}>
-          {health.stub ? '🧪 Stub mode (local test)' : health.configured ? '● AI ready' : '● API key not configured'}
+        <button className="brand" onClick={goHome} aria-label="Studient AI — back to home">
+          <span className="brand-mark">🧠</span>
+          <span className="brand-text">
+            <span className="brand-name"><span>Studient</span> AI</span>
+            <span className="brand-sub">Personal study assistant</span>
+          </span>
+        </button>
+        <nav className="nav-pills" aria-label="Study sections">
+          {SECTIONS.map((s) => (
+            <button key={s.id} data-accent={s.accent} className={section === s.id && docText ? 'nav-pill active' : 'nav-pill'} onClick={() => goFamily(s.id)}>{s.label}</button>
+          ))}
+        </nav>
+        <div className="topbar-actions">
+          <label className="upload-mini" htmlFor="studient-file-input">📁 Upload</label>
+          <div className={`key-badge ${health.configured ? 'ok' : 'bad'}`}>
+            {health.stub ? '🧪 Stub mode (local test)' : health.configured ? '● AI ready' : '● API key not configured'}
+          </div>
+          <button className="icon-btn" onClick={() => setDrawerOpen(true)} aria-label="Open settings" title="Settings">⚙️</button>
         </div>
       </header>
+      <input id="studient-file-input" type="file" multiple accept=".pdf,.docx,.pptx,.txt,.md" onChange={onFiles} hidden />
 
-      <div className="layout">
-        <aside className="sidebar">
-          <div className="upload-head">Build your study space</div>
-          <p className="muted small">Upload a source and let Studient AI turn it into active revision material.</p>
-          <div className="file-types"><span>PDF</span><span>WORD</span><span>PPTX</span><span>TXT</span><span>MD</span></div>
-          <label className="upload-btn">📁 Choose study materials
-            <input type="file" multiple accept=".pdf,.docx,.pptx,.txt,.md" onChange={onFiles} hidden />
-          </label>
-          {uploading && <p className="muted">Reading your workspace documents…</p>}
-          {uploadError && <div className="alert error">{uploadError}</div>}
-          {docText && <div className="alert ok">✓ Workspace ready · {Object.keys(docs).length} document(s)</div>}
-          {docText && (
-            <div className="side-metrics">
-              <div><b>{words.toLocaleString()}</b><span>Words</span></div>
-              <div><b>{sections || '—'}</b><span>Sections</span></div>
+      {drawerOpen && (
+        <div className="drawer-overlay" onClick={() => setDrawerOpen(false)}>
+          <aside className="drawer" role="dialog" aria-label="Settings" onClick={(e) => e.stopPropagation()}>
+            <div className="drawer-head">
+              <div><div className="kicker">Tune your experience</div><h2>⚙️ Settings</h2></div>
+              <button className="icon-btn" onClick={() => setDrawerOpen(false)} aria-label="Close settings">✕</button>
             </div>
-          )}
+            <div className="drawer-body">
+              <label className="field">Appearance
+                <select value={settings.theme} onChange={(e) => updateSettings({ theme: e.target.value })}><option>Light</option><option>Dark</option></select>
+              </label>
+              <label className="check"><input type="checkbox" checked={settings.reducedMotion} onChange={(e) => updateSettings({ reducedMotion: e.target.checked })} /> Reduce animations</label>
+              <label className="check"><input type="checkbox" checked={settings.highContrast} onChange={(e) => updateSettings({ highContrast: e.target.checked })} /> High contrast</label>
+              <label className="field">Text size
+                <select value={settings.fontScale} onChange={(e) => updateSettings({ fontScale: e.target.value })}><option>Small</option><option>Default</option><option>Large</option><option>Extra large</option></select>
+              </label>
           {Object.keys(docs).length > 0 && (
             <details className="side-files"><summary>📚 Workspace files</summary>
               {Object.entries(docs).map(([name, d]) => (
@@ -308,19 +380,6 @@ export default function App() {
               ))}
             </details>
           )}
-
-          <label className="field">Workspace name
-            <input type="text" value={settings.workspaceName} onChange={(e) => updateSettings({ workspaceName: e.target.value })} placeholder="Name this course workspace" />
-          </label>
-          <label className="field">Appearance
-            <select value={settings.theme} onChange={(e) => updateSettings({ theme: e.target.value })}><option>Light</option><option>Dark</option></select>
-          </label>
-          <label className="check"><input type="checkbox" checked={settings.reducedMotion} onChange={(e) => updateSettings({ reducedMotion: e.target.checked })} /> Reduce animations</label>
-          <label className="check"><input type="checkbox" checked={settings.highContrast} onChange={(e) => updateSettings({ highContrast: e.target.checked })} /> High contrast</label>
-          <label className="field">Text size
-            <select value={settings.fontScale} onChange={(e) => updateSettings({ fontScale: e.target.value })}><option>Small</option><option>Default</option><option>Large</option><option>Extra large</option></select>
-          </label>
-
           <details className="privacy">
             <summary>🔐 Privacy &amp; data controls</summary>
             <label className="check"><input type="checkbox" checked={settings.privacyMode} onChange={(e) => updateSettings({ privacyMode: e.target.checked })} /> Private session mode <span className="muted small">(do not save new test attempts or summaries to local history)</span></label>
@@ -337,7 +396,6 @@ export default function App() {
             }}>🗑️ Securely delete local data</button>
             <p className="muted small">No server storage exists in this app. Documents live only in your browser; history and review state live in localStorage on this device. The Groq API key is read only from the server environment and is never included in exports.</p>
           </details>
-
           <hr />
           <h3>⚙️ Study Settings</h3>
           <label className="field">Number of questions: <b>{settings.questionCount}</b>
@@ -359,63 +417,90 @@ export default function App() {
           <label className="check wrap"><input type="checkbox" checked={settings.negativeMarking} onChange={(e) => updateSettings({ negativeMarking: e.target.checked })} /> <span className="lbl">Negative marking</span> <span className="muted small">(wrong answers −0.25)</span></label>
           <button className="btn" onClick={resetQuiz}>🔄 Reset Test</button>
           <div className="tip">💡 <b>Study Tip</b><br />For best results, upload clear lecture notes, Word documents, or presentation slides.</div>
-        </aside>
+            </div>
+          </aside>
+        </div>
+      )}
 
-        <main className="main">
-          <section className="hero">
+      <main className="main">
+        <section className={docText ? 'hero compact' : 'hero'}>
+          <div className="blob b1" aria-hidden="true" /><div className="blob b2" aria-hidden="true" /><div className="blob b3" aria-hidden="true" /><div className="blob b4" aria-hidden="true" />
+          <div className="hero-inner">
             <div className="eyebrow">✦ Your intelligent study companion</div>
             <div className="hero-icon">🧠</div>
             <h1><span className="grad">Studient</span> AI</h1>
             <p className="sub">Your Personal AI-Powered Study Assistant</p>
             <p className="desc">Turn your notes, documents, and presentations into clear, exam-ready learning — then practice, reflect, and improve with confidence.</p>
-          </section>
-
-          {!health.configured && !health.stub && (
-            <div className="alert warn big">⚠️ API key not configured — add <code>GROQ_API_KEY</code> in Vercel Settings → Environment Variables, then redeploy. You can still upload documents and explore the interface, but AI generation will not run.</div>
-          )}
-          {health.stub && <div className="alert warn big">🧪 Stub mode is on (STUDIENT_STUB_GROQ=1) — responses are canned test data, not real AI output. Turn it off for real use.</div>}
-          {error && <div className="alert error big">{error}</div>}
-          {busy && <div className="alert info big">⏳ {busy}</div>}
-
-          {!docText ? (
-            <>
-              <div className="card"><h2><span className="grad">👋 Welcome to Studient AI</span></h2><p>Upload your study material from the sidebar and transform it into personalized exam preparation.</p></div>
-              <div className="features">
-                {[[ '📚', 'Learn', 'Generate summaries, explanations, definitions and key concepts.'], ['📝', 'Practice', 'Generate MCQs, short questions, long questions and flashcards.'], ['🎯', 'Prepare', 'Analyze difficulty and test yourself with a graded exam-style test.']].map(([icon, t, x]) => (
-                  <div key={t} className="feature"><div className="icon">{icon}</div><div className="title">{t}</div><div className="text">{x}</div></div>
-                ))}
+            <div className={`upload-card ${dragOver ? 'drag' : ''}`} id="upload-card"
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDropFiles}>
+              <div className="upload-card-head">
+                <b>{docText ? 'Add more study materials' : 'Build your study space'}</b>
+                <span className="muted small">Upload a source and let Studient AI turn it into active revision material.</span>
               </div>
-              <Dashboard data={dash} />
-              <div className="alert info">📌 <b>OCR supported</b><br />Scanned PDFs are read with on-device OCR (tesseract.js) when no selectable text is available. If a page yields no text and OCR is unavailable, the page is flagged clearly.</div>
-            </>
-          ) : (
-            <>
-              <div className="doc-bar"><div className="doc-name">📄 {docName} <span className="doc-type">WORKSPACE</span></div><div className="muted small">Ready for active learning</div></div>
-              <button className="btn ghost" onClick={() => setShowPreview(!showPreview)}>📄 {showPreview ? 'Hide' : 'Preview'} extracted document text</button>
-              {showPreview && (
-                <div className="card">
-                  {pptStats.length > 0 && <div className="alert info">PowerPoint extraction audit: <b>{readableSlides}/{totalSlides} slides contain readable text ({coverage}% text coverage)</b>. The AI summary uses all extracted slide sections, not only this preview.</div>}
-                  {coverage < 100 && totalSlides > 0 && <div className="alert warn">Some slides are visual-only. Their text cannot be recovered; export the deck to PDF and upload it for OCR if those slides contain important diagrams or screenshots.</div>}
-                  <textarea readOnly value={docText} rows={14} className="preview-text" aria-label="Complete extracted content" />
-                  <button className="btn" onClick={() => downloadText(docText, `${docName.replace(/\.[^.]+$/, '')}.txt`)}>⬇️ Download extracted text</button>
+              <div className="file-types">
+                <span className="ft-teal">PDF</span><span className="ft-coral">WORD</span><span className="ft-gold">PPTX</span><span className="ft-rose">TXT</span><span className="ft-teal">MD</span>
+              </div>
+              <label className="upload-btn" htmlFor="studient-file-input">📁 {dragOver ? 'Drop your files here' : 'Choose study materials'}</label>
+              <p className="muted small center">or drag &amp; drop files onto this card · up to 50 MB total</p>
+              <label className="field">Workspace name
+                <input type="text" value={settings.workspaceName} onChange={(e) => updateSettings({ workspaceName: e.target.value })} placeholder="Name this course workspace" />
+              </label>
+              {uploading && <p className="muted">Reading your workspace documents…</p>}
+              {uploadError && <div className="alert error">{uploadError}</div>}
+              {docText && <div className="alert ok">✓ Workspace ready · {Object.keys(docs).length} document(s) · {words.toLocaleString()} words</div>}
+              <p className="muted small center">🔒 Documents never leave your device except the selected text sent to Groq.</p>
+            </div>
+          </div>
+        </section>
+
+        {!health.configured && !health.stub && (
+          <div className="alert warn big key-banner">⚠️ <b>API key not configured</b> — add <code>GROQ_API_KEY</code> in Vercel Settings → Environment Variables, then redeploy. You can still upload documents and explore the interface, but AI generation will not run.</div>
+        )}
+        {health.stub && <div className="alert warn big">🧪 Stub mode is on (STUDIENT_STUB_GROQ=1) — responses are canned test data, not real AI output. Turn it off for real use.</div>}
+        {error && <div className="alert error big">{error}</div>}
+        {busy && <div className="alert info big">⏳ {busy}</div>}
+
+        {!docText ? (
+          <>
+            <div className="features">
+              {SECTIONS.map((s, i) => (
+                <button key={s.id} data-accent={s.accent} className="feature anim-rise" style={{ animationDelay: `${0.1 + i * 0.08}s` }} onClick={() => document.getElementById('upload-card')?.scrollIntoView({ behavior: settings.reducedMotion ? 'auto' : 'smooth', block: 'center' })}>
+                  <div className="icon">{s.label.split(' ')[0]}</div>
+                  <div className="title">{s.label.replace(/^[^\s]+\s/, '')}</div>
+                  <div className="text">{s.sub}</div>
+                  <div className="feature-cta">Upload a document to begin →</div>
+                </button>
+              ))}
+            </div>
+            <Dashboard data={dash} />
+            <div className="alert info">📌 <b>OCR supported</b><br />Scanned PDFs are read with on-device OCR (tesseract.js) when no selectable text is available. If a page yields no text and OCR is unavailable, the page is flagged clearly.</div>
+          </>
+        ) : view === 'home' ? (
+          <>
+            <WorkspaceBar />
+            <Dashboard data={dash} />
+            <Launchpad sections={SECTIONS} onOpen={openTool} />
+          </>
+        ) : (
+          <>
+            <WorkspaceBar />
+            <div className="crumbs">
+              <button className="btn ghost" onClick={goHome}>← All tools</button>
+              <span className="crumb-sep">/</span>
+              <b className="crumb-fam" data-accent={currentSection.accent}>{currentSection.label}</b>
+              <span className="crumb-tab">{currentSection.tabs.find((t) => t.id === tab)?.label}</span>
+            </div>
+            <nav className="tabs" data-accent={currentSection.accent} aria-label="Tabs">
+              {currentSection.tabs.map((t) => <button key={t.id} className={tab === t.id ? 'tab-btn active' : 'tab-btn'} onClick={() => setTab(t.id)}>{t.label}</button>)}
+            </nav>
+            <div className="tab-body" key={tab} data-accent={currentSection.accent}>
+              {busy && (
+                <div className="skeleton" aria-hidden="true">
+                  <div className="skel-line w70" /><div className="skel-line w90" /><div className="skel-line w55" /><div className="skel-card" />
                 </div>
               )}
-              <div className="metrics">
-                <div className="metric"><span className="chip">📖</span><span>Words</span><b>{words.toLocaleString()}</b></div>
-                <div className="metric"><span className="chip">🔤</span><span>Characters</span><b>{docText.length.toLocaleString()}</b></div>
-                <div className="metric"><span className="chip">🎯</span><span>Difficulty</span><b>{settings.difficulty}</b></div>
-              </div>
-              <Dashboard data={dash} />
-
-              <nav className="sections" aria-label="Sections">
-                {SECTIONS.map((s) => <button key={s.id} className={section === s.id ? 'sec-btn active' : 'sec-btn'} onClick={() => { setSection(s.id); setTab(s.tabs[0].id) }}>{s.label}</button>)}
-              </nav>
-              <div className="parent-nav"><b>{currentSection.label}</b> <small>{currentSection.sub}</small></div>
-              <nav className="tabs" aria-label="Tabs">
-                {currentSection.tabs.map((t) => <button key={t.id} className={tab === t.id ? 'tab-btn active' : 'tab-btn'} onClick={() => setTab(t.id)}>{t.label}</button>)}
-              </nav>
-
-              <div className="tab-body">
                 {tab === 'summary' && <SummaryTab {...{ summary, summaryDetail, setSummaryDetail, summaryFocus, setSummaryFocus, genSummary, busy, suggestions, explainTopic, topicExplanation, followupRequest, speechLang, setSpeechLang, readAloud, speaking, docText, docName, flashcards, mindMap, studyPlan }} />}
                 {tab === 'concepts' && <SimpleGenTab title="🔍 Key Concepts" caption="Extract the concepts you should know before your exam." button="✨ Extract Key Concepts" value={concepts} onGenerate={() => run('Identifying key concepts…', async () => {
                   const ctx = getRelevantChunks(docText, 'main concepts important ideas definitions topics', 8)
@@ -449,15 +534,28 @@ export default function App() {
                 {tab === 'materials' && <MaterialsTab {...{ material, setMaterial, materialType, setMaterialType, docText, run, busy }} />}
                 {tab === 'paper' && <PaperTab {...{ samplePaper, setSamplePaper, docText, run, busy }} />}
                 {tab === 'video' && <VideoTab {...{ videoPlan, setVideoPlan, videoConfig, setVideoConfig, videoSlides, setVideoSlides, videoNarration, setVideoNarration, docText, summary, videoTopics, run, busy }} />}
-              </div>
-            </>
-          )}
+            </div>
+          </>
+        )}
 
-          <footer className="footer">🧠 StudientAI — All rights reserved to Sharjeelsarwar-ai2</footer>
-        </main>
-      </div>
+        <footer className="footer">🧠 StudientAI — All rights reserved to Sharjeelsarwar-ai2</footer>
+      </main>
     </div>
   )
+}
+
+function CountUp({ value }) {
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    const v = Number(value) || 0
+    if (document.documentElement.dataset.motion === 'reduced') { setN(v); return }
+    let raf = 0
+    const t0 = performance.now()
+    const tick = (t) => { const p = Math.min(1, (t - t0) / 900); setN(Math.round(v * (1 - Math.pow(1 - p, 3)))); if (p < 1) raf = requestAnimationFrame(tick) }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [value])
+  return <>{n.toLocaleString()}</>
 }
 
 function Dashboard({ data }) {
@@ -466,15 +564,15 @@ function Dashboard({ data }) {
       <div className="dash-head"><div><div className="kicker">Personal learning command center</div><h2>Welcome back to your study space</h2><p className="muted">Track your momentum, pick up where you left off, and make every session count.</p></div>
         <div className="dash-next"><span>Next best step</span><b>✨ {data.recommended}</b></div></div>
       <div className="dash-grid">
-        <div className="dash-gauge"><div className="orb" style={{ '--p': data.readiness }}><div className="orb-in"><span className="orb-n">{data.readiness}%</span><span className="orb-l">readiness</span></div></div>
+        <div className="dash-gauge" data-accent="teal"><div className="orb" style={{ '--p': data.readiness }}><div className="orb-in"><span className="orb-n">{data.readiness}%</span><span className="orb-l">readiness</span></div></div>
           <div><div className="kicker">EXAM READINESS</div><b>Build confident recall</b><p className="muted small">Your readiness grows as you summarize, practice, and review.</p></div></div>
-        <div className="dash-stat"><span>🔥</span><b>{data.streak} day</b><small>study streak</small></div>
-        <div className="dash-stat"><span>✅</span><b>{data.totalQuestions}</b><small>questions completed</small></div>
-        <div className="dash-stat"><span>🎴</span><b>{data.mastered}/{data.currentCards}</b><small>flashcards mastered</small></div>
-        <div className="dash-stat"><span>🏆</span><b>{data.bestScore}%</b><small>best test score</small></div>
+        <div className="dash-stat anim-rise" data-accent="rose" style={{ animationDelay: '0.05s' }}><span>🔥</span><b><CountUp value={data.streak} /> day</b><small>study streak</small></div>
+        <div className="dash-stat anim-rise" data-accent="gold" style={{ animationDelay: '0.1s' }}><span>✅</span><b><CountUp value={data.totalQuestions} /></b><small>questions completed</small></div>
+        <div className="dash-stat anim-rise" data-accent="coral" style={{ animationDelay: '0.15s' }}><span>🎴</span><b><CountUp value={data.mastered} />/<CountUp value={data.currentCards} /></b><small>flashcards mastered</small></div>
+        <div className="dash-stat anim-rise" data-accent="teal" style={{ animationDelay: '0.2s' }}><span>🏆</span><b><CountUp value={data.bestScore} />%</b><small>best test score</small></div>
       </div>
       <div className="dash-insights">
-        <span>Average score <b>{data.average}%</b></span>
+        <span>Average score <b><CountUp value={data.average} />%</b></span>
         <span>Trend <b className={data.improvement >= 0 ? 'pos' : 'neg'}>{data.improvement >= 0 ? '+' : ''}{data.improvement}%</b></span>
         <span>Study sessions <b>{data.sessions}</b></span>
         <span>Due today <b>{data.dueToday}</b></span>
@@ -489,6 +587,36 @@ function Dashboard({ data }) {
         </div>
       </div>
     </section>
+  )
+}
+
+function Launchpad({ sections, onOpen }) {
+  return (
+    <div className="launchpad" id="launchpad">
+      <div className="launch-head">
+        <div><div className="kicker">Your AI toolkit</div><h2>What do you want to do next?</h2></div>
+        <p className="muted">Seventeen tools, grouped by how you study. Pick one — everything runs on the documents in your workspace.</p>
+      </div>
+      {sections.map((s, si) => (
+        <section key={s.id} className="fam-panel anim-rise" data-accent={s.accent} style={{ animationDelay: `${si * 0.08}s` }}>
+          <header className="fam-head">
+            <span className="fam-icon">{s.label.split(' ')[0]}</span>
+            <div><h3>{s.label.replace(/^[^\s]+\s/, '')}</h3><p className="muted small">{s.sub}</p></div>
+            <span className="fam-count">{s.tabs.length} tools</span>
+          </header>
+          <div className="tool-grid">
+            {s.tabs.map((t, ti) => (
+              <button key={t.id} className="tool-card anim-rise" style={{ animationDelay: `${0.05 + (si * 3 + ti) * 0.04}s` }} onClick={() => onOpen(s.id, t.id)}>
+                <span className="tool-icon">{t.label.split(' ')[0]}</span>
+                <span className="tool-title">{t.label.replace(/^[^\s]+\s/, '')}</span>
+                <span className="tool-desc">{t.desc}</span>
+                <span className="tool-arrow">→</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
   )
 }
 

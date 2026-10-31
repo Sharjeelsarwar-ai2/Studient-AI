@@ -1,8 +1,10 @@
 # Studient AI — React + Vite rebuild
 
-Glassmorphic rebuild of the Streamlit Studient AI app. Deep emerald/jade + warm ivory
-("Emerald Study" palette: jade #0B6E4F, emerald #10B981, deep green #064E3B,
-warm ivory #FAF7F0, sand #F1EBDD, ink #1C2B26).
+Glassmorphic rebuild of the Streamlit Studient AI app. Warm ivory base with a
+multi-accent "Spectrum Study" palette — one fresh hue per study family:
+Learn teal #0D9488, Practice coral #EA580C, Plan gold #CA8A04, exam rose #E11D48
+(base ivory #FBF7EE, sand #F2EBDA, ink #1B2A2E). Top navigation + hero command
+center + launchpad layout (no left sidebar).
 
 ## Architecture
 - **Browser-side extraction** (pdf.js, mammoth, JSZip/PPTX XML, plain text) in `src/lib/extract.js`
