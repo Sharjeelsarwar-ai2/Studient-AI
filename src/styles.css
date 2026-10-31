@@ -59,6 +59,12 @@
   --teal-soft: rgba(13, 148, 136, .22); --coral-soft: rgba(234, 88, 12, .22);
   --gold-soft: rgba(202, 138, 4, .22); --rose-soft: rgba(225, 29, 72, .22);
 }
+/* In dark mode the per-accent soft tint must also be dark, or light pastel
+   tints would sit under light text (dashboard cards, sidebar current family). */
+[data-theme="dark"] [data-accent="teal"] { --acc-soft: rgba(13, 148, 136, .22); }
+[data-theme="dark"] [data-accent="coral"] { --acc-soft: rgba(234, 88, 12, .22); }
+[data-theme="dark"] [data-accent="gold"] { --acc-soft: rgba(202, 138, 4, .22); }
+[data-theme="dark"] [data-accent="rose"] { --acc-soft: rgba(225, 29, 72, .22); }
 [data-contrast="high"] { --muted: #33413D; --line: rgba(27, 42, 46, .28); --line-strong: rgba(27, 42, 46, .45); }
 [data-contrast="high"][data-theme="dark"] { --muted: #C4D4CB; }
 [data-font="Small"] { font-size: 14px; }
@@ -67,7 +73,7 @@
 [data-font="Extra large"] { font-size: 19.5px; }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 100px; /* keep anchored sections clear of the sticky topbar (~69px tall) */ }
+html { scroll-behavior: smooth; scroll-padding-top: 100px; /* keep anchored sections clear of the sticky topbar (~69px tall) */ scroll-snap-type: y proximity; /* gentle snap: resting positions align section starts below the topbar so a section header can never rest half-hidden under it */ }
 body {
   margin: 0; font-family: var(--font); color: var(--ink); line-height: 1.6;
   background:
@@ -166,6 +172,47 @@ h3 { font-size: 1.1rem; }
 [data-theme="dark"] .key-badge.ok { color: #5EEAD4; }
 [data-theme="dark"] .key-badge.bad { color: #FDA4AF; }
 
+/* ---------- transformed glass sidebar ---------- */
+/* Slim, collapsible glass sidebar beside the top nav + hero + Launchpad.
+   It complements them — it never replaces the top nav, hero, Launchpad or
+   quick switcher, and it never overlaps content (in-flow flex, sticky). */
+.shell { display: flex; align-items: flex-start; gap: 20px; max-width: 1480px; margin: 0 auto; padding: 0 24px; }
+.shell > .main { flex: 1 1 auto; min-width: 0; margin: 0; max-width: 1180px; padding: 0 0 48px; }
+.sidebar { position: sticky; top: 71px; flex: 0 0 264px; max-height: calc(100dvh - 83px); overflow-y: auto; background: var(--glass); backdrop-filter: blur(16px) saturate(1.35); border: 1px solid var(--glass-border); border-radius: var(--radius); box-shadow: inset 0 1px 0 var(--glass-hi), var(--shadow-sm); padding: 14px; display: flex; flex-direction: column; gap: 14px; z-index: 20; }
+.sidebar-head { display: flex; align-items: center; gap: 10px; }
+.sidebar-head .brand-mark { width: 34px; height: 34px; font-size: 1.2rem; flex: none; }
+.sidebar-head b { font-size: .98rem; flex: 1; min-width: 0; }
+.sidebar-toggle { margin-left: auto; width: 34px; height: 34px; font-size: 1rem; flex: none; }
+.side-sec { display: flex; flex-direction: column; gap: 8px; }
+.side-label { font-size: .72rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); padding: 0 2px; }
+.side-ws { background: var(--glass-strong); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.side-ws b { overflow-wrap: anywhere; font-size: .95rem; }
+.side-ws .btn { align-self: flex-start; }
+.side-fam { border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; background: var(--glass); }
+.side-fam-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 12px; background: var(--glass-strong); border: 0; cursor: pointer; font: inherit; font-weight: 800; color: var(--ink); text-align: left; }
+.side-fam-head:hover { background: var(--acc-soft); }
+.side-fam-head.current { background: var(--acc-soft); }
+.side-ic { font-size: 1.05rem; flex: none; }
+.side-fam-head .side-caret { margin-left: auto; color: var(--muted); font-size: .8rem; }
+.side-tools { display: flex; flex-direction: column; padding: 6px; gap: 2px; }
+.side-tool { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border-radius: 10px; border: 1px solid transparent; background: transparent; cursor: pointer; font: inherit; font-size: .9rem; color: var(--ink); text-align: left; }
+.side-tool:hover { background: var(--acc-soft); }
+.side-tool.current { background: var(--acc-grad); color: #fff; font-weight: 800; }
+.side-foot { margin-top: auto; }
+.side-settings { display: flex; align-items: center; gap: 10px; width: 100%; padding: 11px 12px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--glass-strong); cursor: pointer; font: inherit; font-weight: 700; color: var(--ink); }
+.side-settings:hover { border-color: var(--teal); }
+.hamburger { display: none; }
+/* collapsed icon rail: family icons + settings icon + expand toggle only */
+.sidebar.rail { flex-basis: 68px; padding: 12px 8px; }
+.sidebar.rail .sidebar-head b, .sidebar.rail .sidebar-head .brand-mark, .sidebar.rail .side-label, .sidebar.rail .side-ws,
+.sidebar.rail .side-fam-head .side-fam-name, .sidebar.rail .side-fam-head .side-caret,
+.sidebar.rail .side-tools, .sidebar.rail .side-settings span { display: none; }
+.sidebar.rail .sidebar-head { justify-content: center; }
+.sidebar.rail .side-fam-head { justify-content: center; padding: 10px 6px; }
+.sidebar.rail .side-settings { justify-content: center; padding: 10px 6px; }
+.sidebar.rail .sidebar-toggle { margin-left: 0; }
+@keyframes slideInLeft { from { transform: translateX(-40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
 /* ---------- hero + upload command card ---------- */
 .hero {
   position: relative; overflow: hidden; border-radius: var(--radius-lg);
@@ -182,11 +229,18 @@ h3 { font-size: 1.1rem; }
 .hero-icon { font-size: 3.4rem; width: 84px; height: 84px; display: grid; place-items: center; border-radius: 24px; background: linear-gradient(135deg, var(--teal-soft), var(--coral-soft), var(--gold-soft)); border: 1px solid var(--line); box-shadow: var(--shadow); }
 .hero .sub { font-size: 1.15rem; font-weight: 700; margin: 0; }
 .hero .desc { max-width: 640px; color: var(--muted); margin: 0; }
-.hero.compact { padding: 20px 24px; text-align: left; margin-top: 20px; }
-.hero.compact .hero-inner { align-items: center; gap: 0; }
-.hero.compact .eyebrow, .hero.compact .hero-icon, .hero.compact .sub, .hero.compact .desc { display: none; }
-.hero.compact h1 { display: none; }
+/* Compact hero (documents loaded): the branding STAYS — title, subtitle and
+   brain icon remain visible, only tightened. Only the long description hides,
+   and spacing shrinks. */
+.hero.compact { padding: 22px 24px 20px; margin-top: 20px; }
+.hero.compact .hero-inner { align-items: center; gap: 8px; }
+.hero.compact .eyebrow { font-size: .72rem; padding: 4px 10px; }
+.hero.compact .hero-icon { width: 52px; height: 52px; font-size: 2rem; border-radius: 16px; }
+.hero.compact h1 { font-size: clamp(1.5rem, 4vw, 2rem); }
+.hero.compact .sub { font-size: 1rem; }
+.hero.compact .desc { display: none; }
 .hero.compact .blob { opacity: .3; }
+.hero.compact .upload-card { margin-top: 6px; }
 
 .upload-card {
   width: min(680px, 100%); margin-top: 12px; text-align: left; padding: 22px; border-radius: var(--radius);
@@ -263,15 +317,19 @@ h3 { font-size: 1.1rem; }
 [data-theme="dark"] .metrics .metric b { filter: brightness(1.5); }
 
 /* ---------- dashboard ---------- */
-.dashboard { display: flex; flex-direction: column; gap: 16px; }
+.dashboard { display: flex; flex-direction: column; gap: 16px; scroll-margin-top: 0; /* keep at 0: the 100px html scroll-padding already lands anchor scrolls clear of the topbar, and a 0 margin puts the proximity snap point as close as possible to the pill's straddle band so resting scrolls snap clear (a larger margin pushed the snap point past the snap threshold, leaving the pill half-hidden on mobile) */ scroll-snap-align: start; }
 .dash-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
 .dash-head h2 { margin-top: 4px; }
 .dash-head p { margin: 6px 0 0; }
-.dash-next { background: var(--glass); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 12px 16px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 2px; max-width: 340px; }
-.dash-next span { font-size: .78rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--coral-deep); }
+.dash-next { background: linear-gradient(180deg, var(--rose-soft), var(--glass)); border: 1px solid var(--line); border-top: 3px solid var(--rose); border-radius: var(--radius-sm); padding: 12px 16px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 2px; max-width: 340px; }
+.dash-next span { font-size: .78rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--rose-deep); }
+[data-theme="dark"] .dash-next span { color: #FDA4AF; }
+/* The frosted-glass rule below resets border-color on .dash-next, so the rose
+   top border needs a more specific selector to survive it. */
+.dash-head .dash-next { border-top: 3px solid var(--rose); }
 .dash-next b { font-size: 1rem; }
 .dash-grid { display: grid; grid-template-columns: 1.7fr 1fr 1fr 1fr 1fr; gap: 14px; }
-.dash-gauge { display: flex; gap: 16px; align-items: center; background: var(--glass); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow-sm); position: relative; overflow: hidden; }
+.dash-gauge { display: flex; gap: 16px; align-items: center; background: linear-gradient(180deg, var(--acc-soft), var(--glass)); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow-sm); position: relative; overflow: hidden; }
 .dash-gauge::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--acc-grad); }
 .dash-gauge b { font-size: 1.05rem; display: block; margin-top: 2px; }
 .orb { width: 108px; height: 108px; border-radius: 50%; flex: none; display: grid; place-items: center;
@@ -280,7 +338,7 @@ h3 { font-size: 1.1rem; }
 .orb-in { width: 84px; height: 84px; border-radius: 50%; background: var(--glass-strong); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
 .orb-n { font-weight: 850; font-size: 1.3rem; color: var(--teal-deep); }
 .orb-l { font-size: .68rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
-.dash-stat { background: var(--glass); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 2px; position: relative; overflow: hidden; transition: transform .2s ease, box-shadow .2s ease; }
+.dash-stat { background: linear-gradient(180deg, var(--acc-soft), var(--glass)); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 2px; position: relative; overflow: hidden; transition: transform .2s ease, box-shadow .2s ease; }
 .dash-stat:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
 .dash-stat::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px; background: var(--acc-grad); }
 .dash-stat > span:first-child { font-size: 1.4rem; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; background: var(--acc-soft); }
@@ -289,10 +347,16 @@ h3 { font-size: 1.1rem; }
 .dash-stat small { color: var(--muted); font-size: .85rem; }
 .dash-insights { display: flex; gap: 10px; flex-wrap: wrap; }
 .dash-insights span { background: var(--glass); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-size: .88rem; box-shadow: var(--shadow-sm); }
+.dash-insights span[data-accent] { border-left: 3px solid var(--acc); background: linear-gradient(180deg, var(--acc-soft), var(--glass)); }
+.dash-insights span[data-accent] b:not(.pos):not(.neg) { color: var(--acc-deep); }
+[data-theme="dark"] .dash-insights span[data-accent] b:not(.pos):not(.neg) { color: var(--acc); }
 .dash-insights b { font-weight: 800; }
 .pos { color: var(--teal-deep); } .neg { color: var(--rose-deep); }
 .dash-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .dash-cols > div { background: var(--glass); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow-sm); }
+.dash-cols > div[data-accent] { border-top: 3px solid var(--acc); background: linear-gradient(180deg, var(--acc-soft), var(--glass)); }
+.dash-cols > div[data-accent] .dash-sec { color: var(--acc-deep); }
+[data-theme="dark"] .dash-cols > div[data-accent] .dash-sec { color: var(--acc); }
 .dash-sec { font-weight: 800; margin-bottom: 10px; }
 .dash-row { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); font-size: .92rem; }
 .dash-row span:last-child { color: var(--muted); white-space: nowrap; }
@@ -300,7 +364,7 @@ h3 { font-size: 1.1rem; }
 .dash-sum span { color: var(--muted); font-size: .88rem; overflow-wrap: anywhere; }
 
 /* ---------- launchpad ---------- */
-.launchpad { display: flex; flex-direction: column; gap: 20px; scroll-margin-top: 100px; /* family pills scroll here; keep the heading clear of the sticky topbar */ }
+.launchpad { display: flex; flex-direction: column; gap: 20px; scroll-margin-top: 100px; /* family pills scroll here; keep the heading clear of the sticky topbar */ scroll-snap-align: start; }
 .launch-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
 .launch-head h2 { margin-top: 4px; }
 .launch-head p { margin: 0; max-width: 520px; }
@@ -341,7 +405,27 @@ h3 { font-size: 1.1rem; }
 .tab-body { background: var(--glass); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 16px; animation: rise .45s cubic-bezier(.22, 1, .36, 1) both; }
 .tab-body[data-accent] .btn.primary { background: var(--acc-grad); }
 .tab-body[data-accent] .answer-head { background: var(--acc-grad); }
+/* Exam/test actions use rose, not the family colour (same tool = same colour everywhere). */
+.tab-body[data-accent] .btn.primary.rose { background: linear-gradient(135deg, var(--rose-deep), var(--rose-bright)); }
+/* Tab content root: give every tool view the same 16px vertical rhythm as
+   .tab-body itself. Before this, a generate button and the results header
+   below it sat 1px apart (no margins, no gap) — on a phone that reads as
+   an overlap. Buttons stay compact; everything else stretches full width. */
+.tab-body > div:not(.skeleton) { display: flex; flex-direction: column; gap: 16px; }
+.tab-body > div:not(.skeleton) > .btn { align-self: flex-start; }
+.tab-body > div:not(.skeleton) > p { margin: 0; }
 .tab-body h2 { font-size: 1.35rem; }
+
+/* ---------- generating popup (driven by the busy state) ---------- */
+.gen-overlay { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 20px; pointer-events: none; /* informational only — never blocks clicks, scrolling, or the result underneath */ }
+.gen-card { pointer-events: none; display: flex; align-items: center; gap: 16px; background: var(--glass-strong); backdrop-filter: blur(18px) saturate(1.4); border: 1px solid var(--glass-border); border-radius: 20px; box-shadow: inset 0 1px 0 var(--glass-hi), var(--shadow-lg); padding: 20px 24px; max-width: min(520px, calc(100vw - 40px)); animation: popInGen .25s cubic-bezier(.22, 1, .36, 1) both; }
+@keyframes popInGen { from { opacity: 0; transform: translateY(-8px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+.gen-spinner { width: 40px; height: 40px; flex: none; border-radius: 50%; border: 4px solid var(--sand); border-top-color: var(--teal); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.gen-text b { display: block; font-size: 1.05rem; }
+.gen-text span { color: var(--muted); font-size: .9rem; }
+@media (prefers-reduced-motion: reduce) { .gen-spinner { animation: none; } }
+[data-motion="reduced"] .gen-spinner { animation: none; }
 
 /* ---------- loading skeleton / shimmer ---------- */
 .skeleton { display: flex; flex-direction: column; gap: 12px; padding: 4px 0 8px; }
@@ -522,6 +606,12 @@ h3 { font-size: 1.1rem; }
 }
 @media (max-width: 640px) {
   .main { padding: 0 14px 36px; gap: 16px; }
+  .shell { flex-direction: column; gap: 0; padding: 0 14px; }
+  .shell > .main { padding: 0 0 36px; max-width: none; }
+  .sidebar { display: none; }
+  .sidebar.mobile-open { display: flex; position: fixed; top: 0; left: 0; bottom: 0; z-index: 65; width: min(300px, 85vw); max-height: none; border-radius: 0; border-left: 0; border-top: 0; border-bottom: 0; animation: slideInLeft .3s cubic-bezier(.22, 1, .36, 1) both; }
+  .sidebar-backdrop { position: fixed; inset: 0; background: rgba(27, 42, 46, .45); backdrop-filter: blur(4px); z-index: 64; }
+  .hamburger { display: inline-flex; }
   .topbar { padding: 8px 12px; gap: 10px; }
   .nav-pills { order: 3; flex-basis: 100%; justify-content: flex-start; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
   .nav-pills::-webkit-scrollbar { display: none; }
@@ -532,8 +622,7 @@ h3 { font-size: 1.1rem; }
   .tab-body { padding: 16px; }
   .metrics { grid-template-columns: 1fr 1fr; }
   .metrics .metric:last-child { grid-column: 1 / -1; }
-  .dash-grid { grid-template-columns: 1fr 1fr; }
-  .dash-gauge { flex-direction: column; align-items: flex-start; }
+  .dash-grid { grid-template-columns: 1fr 1fr; scroll-snap-align: start; /* narrow-screen-only second snap point just below the dashboard header: here the wrapped topbar is ~157px tall, so stops inside the header's straddle band snap here (pill fully past) instead of resting half-hidden. NOT applied wider — on desktop the grid's snap point sits inside the straddle band and makes it worse */ }
   .tool-grid { grid-template-columns: 1fr; }
   .fam-head { flex-wrap: wrap; }
   .fam-count { margin-left: 0; }

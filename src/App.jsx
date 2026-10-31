@@ -73,6 +73,9 @@ export default function App() {
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [switcherQuery, setSwitcherQuery] = useState('')
   const [dragOver, setDragOver] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => { try { return localStorage.getItem('studient-sidebar-collapsed') === '1' } catch { return false } })
+  const [sidebarMobileOpen, setSidebarMobileOpen] = useState(false)
+  const [expandedFamily, setExpandedFamily] = useState('desk')
 
   const [summary, setSummary] = useState('')
   const [summaryDetail, setSummaryDetail] = useState('Detailed')
@@ -219,11 +222,12 @@ export default function App() {
     const result = removeNonacademicTopicRows(makeFormulasReadable(data.result || ''))
     setSummary(result)
     saveSummary(docName, result, settings.privacyMode)
-    try {
-      const s = await generate('suggestions', '', { summaryText: result })
-      setSuggestions(Array.isArray(s.result) ? s.result : FALLBACK_SUGGESTIONS)
-    } catch { setSuggestions(FALLBACK_SUGGESTIONS) }
     setTopicExplanation(''); setFollowupRequest('')
+    // Suggestions load in the background after the summary lands — the
+    // generating popup must close with the summary, not linger over it.
+    generate('suggestions', '', { summaryText: result }).then((s) => {
+      setSuggestions(Array.isArray(s.result) ? s.result : FALLBACK_SUGGESTIONS)
+    }).catch(() => setSuggestions(FALLBACK_SUGGESTIONS))
   })
 
   const explainTopic = (request) => run('Preparing your focused study response…', async () => {
@@ -335,6 +339,73 @@ export default function App() {
     setSection(sectionId); setView('home')
     document.getElementById('launchpad')?.scrollIntoView({ behavior: settings.reducedMotion ? 'auto' : 'smooth', block: 'start' })
   }
+  const toggleSidebar = () => {
+    const next = !sidebarCollapsed
+    setSidebarCollapsed(next)
+    try { localStorage.setItem('studient-sidebar-collapsed', next ? '1' : '0') } catch {}
+  }
+  useEffect(() => { setExpandedFamily(section) }, [section])
+
+  const Sidebar = () => (
+    <aside className={`sidebar ${sidebarCollapsed ? 'rail' : ''} ${sidebarMobileOpen ? 'mobile-open' : ''}`} aria-label="Study navigation">
+      <div className="sidebar-head">
+        <span className="brand-mark">🧠</span>
+        <b>Studient</b>
+        {sidebarMobileOpen ? (
+          <button className="icon-btn sidebar-toggle" onClick={() => setSidebarMobileOpen(false)} aria-label="Close navigation menu">✕</button>
+        ) : (
+          <button className="icon-btn sidebar-toggle" onClick={toggleSidebar} aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar to icon rail'} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse to icon rail'}>{sidebarCollapsed ? '»' : '«'}</button>
+        )}
+      </div>
+      <div className="side-sec">
+        <div className="side-label">Workspace</div>
+        {docText ? (
+          <div className="side-ws"><b>{docName}</b><span className="muted small">{Object.keys(docs).length} document(s) · {words.toLocaleString()} words</span>
+            <label className="btn small" htmlFor="studient-file-input">＋ Add more</label>
+          </div>
+        ) : (
+          <div className="side-ws"><b>No workspace yet</b><span className="muted small">Upload a document to start studying.</span>
+            <label className="btn small" htmlFor="studient-file-input">📁 Upload</label>
+          </div>
+        )}
+      </div>
+      <div className="side-sec">
+        <div className="side-label">Tools</div>
+        {SECTIONS.map((s) => (
+          <div key={s.id} className="side-fam" data-accent={s.accent}>
+            <button className={`side-fam-head ${section === s.id ? 'current' : ''}`} onClick={() => {
+              if (sidebarCollapsed) { setSidebarCollapsed(false); setExpandedFamily(s.id) }
+              else setExpandedFamily(expandedFamily === s.id ? '' : s.id)
+            }} aria-expanded={expandedFamily === s.id}>
+              <span className="side-ic">{s.label.split(' ')[0]}</span>
+              <span className="side-fam-name">{s.label.replace(/^[^\s]+\s/, '')}</span>
+              <span className="side-caret">{expandedFamily === s.id ? '▾' : '▸'}</span>
+            </button>
+            {expandedFamily === s.id && (
+              <div className="side-tools">
+                {s.tabs.map((t) => (
+                  <button key={t.id} className={`side-tool ${tab === t.id && section === s.id && view === 'tool' ? 'current' : ''}`} onClick={() => {
+                    setSidebarMobileOpen(false)
+                    if (!docText) {
+                      setError('Upload a document first — pick a tool after your study material is loaded.')
+                      document.getElementById('upload-card')?.scrollIntoView({ behavior: settings.reducedMotion ? 'auto' : 'smooth', block: 'center' })
+                      return
+                    }
+                    openTool(s.id, t.id)
+                  }}>
+                    <span className="side-ic">{t.label.split(' ')[0]}</span><span>{t.label.replace(/^[^\s]+\s/, '')}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="side-foot">
+        <button className="side-settings" onClick={() => { setDrawerOpen(true); setSidebarMobileOpen(false) }}><span>⚙️</span><span>Settings</span></button>
+      </div>
+    </aside>
+  )
 
   const WorkspaceBar = () => (
     <>
@@ -359,6 +430,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
+        <button className="icon-btn hamburger" onClick={() => { setSidebarCollapsed(false); setSidebarMobileOpen(true) }} aria-label="Open navigation menu">☰</button>
         <button className="brand" onClick={goHome} aria-label="Studient AI — back to home">
           <span className="brand-mark">🧠</span>
           <span className="brand-text">
@@ -449,6 +521,10 @@ export default function App() {
         </div>
       )}
 
+      {sidebarMobileOpen && <div className="sidebar-backdrop" onClick={() => setSidebarMobileOpen(false)} />}
+
+      <div className="shell">
+      <Sidebar />
       <main className="main">
         <section className={docText ? 'hero compact' : 'hero'}>
           <div className="blob b1" aria-hidden="true" /><div className="blob b2" aria-hidden="true" /><div className="blob b3" aria-hidden="true" /><div className="blob b4" aria-hidden="true" />
@@ -534,7 +610,6 @@ export default function App() {
 
       {health.stub && <div className="alert warn big">🧪 Stub mode is on (STUDIENT_STUB_GROQ=1) — responses are canned test data, not real AI output. Turn it off for real use.</div>}
         {error && <div className="alert error big">{error}</div>}
-        {busy && <div className="alert info big">⏳ {busy}</div>}
 
         {!docText ? (
           <>
@@ -614,6 +689,18 @@ export default function App() {
 
         <footer className="footer">🧠 StudientAI — All rights reserved to Sharjeelsarwar-ai2</footer>
       </main>
+      </div>
+      {busy && (
+        <div className="gen-overlay" role="status" aria-live="polite">
+          <div className="gen-card">
+            <div className="gen-spinner" aria-hidden="true" />
+            <div className="gen-text">
+              <b>Studient is {busy.charAt(0).toLowerCase() + busy.slice(1)}</b>
+              <span>Your result will appear right here when it's ready.</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -646,17 +733,17 @@ function Dashboard({ data }) {
         <div className="dash-stat anim-rise" data-accent="teal" style={{ animationDelay: '0.2s' }}><span>🏆</span><b><CountUp value={data.bestScore} />%</b><small>best test score</small></div>
       </div>
       <div className="dash-insights">
-        <span>Average score <b><CountUp value={data.average} />%</b></span>
-        <span>Trend <b className={data.improvement >= 0 ? 'pos' : 'neg'}>{data.improvement >= 0 ? '+' : ''}{data.improvement}%</b></span>
-        <span>Study sessions <b>{data.sessions}</b></span>
-        <span>Due today <b>{data.dueToday}</b></span>
-        <span>Focus next <b>{data.weakest}</b></span>
+        <span data-accent="teal">Average score <b><CountUp value={data.average} />%</b></span>
+        <span data-accent="coral">Trend <b className={data.improvement >= 0 ? 'pos' : 'neg'}>{data.improvement >= 0 ? '+' : ''}{data.improvement}%</b></span>
+        <span data-accent="gold">Study sessions <b>{data.sessions}</b></span>
+        <span data-accent="rose">Due today <b>{data.dueToday}</b></span>
+        <span data-accent="teal">Focus next <b>{data.weakest}</b></span>
       </div>
       <div className="dash-cols">
-        <div><div className="dash-sec">Recent documents</div>
+        <div data-accent="teal"><div className="dash-sec">Recent documents</div>
           {data.recentDocs.length ? data.recentDocs.map(([n, s]) => <div key={n} className="dash-row"><span>📄 {n}</span><span>{(s || '').slice(0, 10) || 'Recently'}</span></div>) : <div className="muted">Upload a document to begin your study journey.</div>}
         </div>
-        <div><div className="dash-sec">Recently generated summaries</div>
+        <div data-accent="coral"><div className="dash-sec">Recently generated summaries</div>
           {data.recentSummaries.length ? data.recentSummaries.map((s, i) => <div key={i} className="dash-sum"><b>{s.document}</b><span>{s.preview}</span></div>) : <div className="muted">Your generated summaries will appear here.</div>}
         </div>
       </div>
@@ -871,7 +958,7 @@ function PracticeTestTab(p) {
         <h2>🧪 Practice Test</h2>
         <p className="muted">Answers are hidden until you submit each question — no peeking.</p>
         {p.incorrectQs.length > 0 && <button className="btn" onClick={() => { p.setQuiz(p.incorrectQs); p.setQuizIndex(0); p.setQuizAnswers([]); p.setQuizLocked(false); p.setQuizFinished(false); p.setChoice(''); p.setTestStartedAt(Date.now()); p.setTestTimedOut(false) }}>🔁 Retake Incorrect Questions</button>}
-        <button className="btn primary" onClick={p.startTest}>🚀 Start New Test</button>
+        <button className="btn primary rose" onClick={p.startTest}>🚀 Start New Test</button>
       </div>
     )
   }
@@ -897,15 +984,15 @@ function PracticeTestTab(p) {
           ))}
         </div>
         {!p.quizLocked ? (
-          <button className="btn primary" onClick={p.submitAnswer} disabled={!p.choice}>✅ Submit Answer</button>
+          <button className="btn primary rose" onClick={p.submitAnswer} disabled={!p.choice}>✅ Submit Answer</button>
         ) : (
           <>
             {last?.correct ? <p className="result-correct">✔ Correct!</p> : <p className="result-wrong">✘ Not quite — correct answer: {q.correct}</p>}
             <p className="muted">{q.explanation}</p>
             {p.quizIndex + 1 < p.quiz.length ? (
-              <button className="btn primary" onClick={() => { p.setQuizIndex(p.quizIndex + 1); p.setQuizLocked(false); p.setChoice('') }}>➡️ Next Question</button>
+              <button className="btn primary rose" onClick={() => { p.setQuizIndex(p.quizIndex + 1); p.setQuizLocked(false); p.setChoice('') }}>➡️ Next Question</button>
             ) : (
-              <button className="btn primary" onClick={p.finishTest}>🏁 Finish Test</button>
+              <button className="btn primary rose" onClick={p.finishTest}>🏁 Finish Test</button>
             )}
           </>
         )}
@@ -933,7 +1020,7 @@ function PracticeTestTab(p) {
         <div><b>Weak topics</b><div className="tags">{r.weak.length ? r.weak.map((t) => <span key={t} className="tag-weak">{t}</span>) : <i>None — nice.</i>}</div></div>
         <div><b>Strong topics</b><div className="tags">{r.strong.length ? r.strong.map((t) => <span key={t} className="tag-strong">{t}</span>) : <i>None yet.</i>}</div></div>
       </div>
-      <button className="btn primary" onClick={p.resetQuiz}>🔄 Take Another Test</button>
+      <button className="btn primary rose" onClick={p.resetQuiz}>🔄 Take Another Test</button>
     </div>
   )
 }
@@ -1069,7 +1156,7 @@ function TutorTab(p) {
         <textarea value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="I don't understand how this process works..." rows={3} />
       </label>
       <div className="btn-row">
-        <button className="btn primary" onClick={() => p.run('Your tutor is thinking…', async () => {
+        <button className="btn primary" onClick={() => p.run('Thinking through your question…', async () => {
           if (!question.trim()) return
           const ctx = getRelevantChunks(p.docText, question, 7)
           const previous = p.tutorMessages.slice(-6).map((m) => `${m.role}: ${m.content}`).join('\n')
