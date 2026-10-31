@@ -1,0 +1,3 @@
+{
+  "rewrites": [{ "source": "/og-image.png", "destination": "/api/og-image" }]
+}
