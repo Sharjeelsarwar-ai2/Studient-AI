@@ -268,7 +268,11 @@ export default function App() {
   const genQuiz = async (questions, category) => {
     const ctx = getRelevantChunks(docText, category === 'Mixed' ? 'important exam concepts facts definitions processes' : category, 10, 12000)
     const data = await generate('quiz', ctx, { count: settings.questionCount, difficulty: settings.difficulty, category })
-    return data.result
+    // A raw string result must never reach setQuiz: the test view indexes
+    // into questions and reads .options, so a string crashes the app blank.
+    const r = data.result
+    if (!Array.isArray(r)) return null
+    return r.filter((q) => q && typeof q.question === 'string' && q.options && typeof q.options === 'object')
   }
 
   const startTest = () => run('Preparing your practice test…', async () => {
@@ -355,12 +359,25 @@ export default function App() {
 
   const currentSection = SECTIONS.find((s) => s.id === section)
 
+  // Opening a tool must land ON the tool, not at the top of the page: the
+  // tool view renders below the hero, so scrollTo(top: 0) showed the hero /
+  // upload area instead. Flag + effect (not a direct scroll call): the tool
+  // view only exists after the state update re-renders, so the scroll runs
+  // once the new view is mounted. Tab switches (setTab) don't set the flag,
+  // so switching tabs mid-tool never scrolls.
+  const scrollToToolRef = useRef(false)
+  useEffect(() => {
+    if (view === 'tool' && scrollToToolRef.current) {
+      scrollToToolRef.current = false
+      requestAnimationFrame(() => {
+        document.getElementById('tool-view')?.scrollIntoView({ behavior: 'instant', block: 'start' })
+      })
+    }
+  }, [view, tab])
+
   const openTool = (sectionId, tabId) => {
     setSection(sectionId); setTab(tabId); setView('tool')
-    // Instant, not smooth: a smooth scroll-to-top leaves an animation window
-    // in which a fast tap on Generate can land mid-scroll and the page ends
-    // up back at the upload section. Instant has no race window.
-    window.scrollTo({ top: 0, behavior: 'instant' })
+    scrollToToolRef.current = true
   }
   const goHome = () => {
     setView('home')
@@ -666,7 +683,7 @@ export default function App() {
         ) : (
           <>
             <WorkspaceBar />
-            <div className="crumbs">
+            <div className="crumbs" id="tool-view">
               <button className="btn ghost" onClick={goHome}>← All tools</button>
               <span className="crumb-sep">/</span>
               <b className="crumb-fam" data-accent={currentSection.accent}>{currentSection.label}</b>
@@ -676,15 +693,16 @@ export default function App() {
               {currentSection.tabs.map((t) => <button key={t.id} className={tab === t.id ? 'tab-btn active' : 'tab-btn'} onClick={() => setTab(t.id)}>{t.label}</button>)}
             </nav>
             <div className="tab-body" key={tab} data-accent={currentSection.accent}>
-                {tab === 'summary' && <SummaryTab {...{ summary, summaryDetail, setSummaryDetail, summaryFocus, setSummaryFocus, genSummary, busy, suggestions, explainTopic, topicExplanation, followupRequest, speechLang, setSpeechLang, readAloud, speaking, docText, docName, flashcards, mindMap, studyPlan }} />}
+              <ToolErrorBoundary key={tab} onReset={goHome}>
+                {tab === 'summary' && <SummaryTab {...{ summary, summaryDetail, setSummaryDetail, summaryFocus, setSummaryFocus, genSummary, busy, suggestions, explainTopic, topicExplanation, followupRequest, speechLang, setSpeechLang, readAloud, speaking, docText, docName, flashcards, mindMap, studyPlan, error, onClearError: () => setError('') }} />}
                 {tab === 'concepts' && <SimpleGenTab title="🔍 Key Concepts" caption="Extract the concepts you should know before your exam." button="✨ Extract Key Concepts" value={concepts} onGenerate={() => run('Identifying key concepts…', async () => {
                   const ctx = getRelevantChunks(docText, 'main concepts important ideas definitions topics', 8)
                   const d = await generate('concepts', ctx, {})
                   setConcepts(removeNonacademicTopicRows(makeFormulasReadable(d.result || '')))
                 })} busy={busy} />}
                 {tab === 'ask' && <AskTab {...{ askQuestion, setAskQuestion, askGeneral, setAskGeneral, askAnswer, setAskAnswer, docText, run, busy }} />}
-                {tab === 'flashcards' && <FlashcardsTab {...{ flashcards, setFlashcards, docText, settings, run, busy, reviewState, setReviewState, docName }} />}
-                {tab === 'mcqs' && <McqTab {...{ mcqs, setMcqs, docText, settings, run, busy }} />}
+                {tab === 'flashcards' && <FlashcardsTab {...{ flashcards, setFlashcards, docText, settings, run, busy, reviewState, setReviewState, docName, error, onClearError: () => setError('') }} />}
+                {tab === 'mcqs' && <McqTab {...{ mcqs, setMcqs, docText, settings, run, busy, error, onClearError: () => setError('') }} />}
                 {tab === 'questions' && <QuestionsTab {...{ importantQs, setImportantQs, docText, settings, run, busy }} />}
                 {tab === 'long' && <TextGenTab title="📖 Long Questions" caption="Prepare detailed university examination questions." button="✨ Generate Long Questions" value={longQs} filename="studient-long-questions.docx" onGenerate={() => run('Generating long questions…', async () => {
                   const ctx = getRelevantChunks(docText, 'process explain discuss compare analyze describe', 8)
@@ -701,7 +719,7 @@ export default function App() {
                   const d = await generate('difficulty', ctx, {})
                   setDifficultyText(removeNonacademicTopicRows(makeFormulasReadable(d.result || '')))
                 })} busy={busy} />}
-                {tab === 'test' && <PracticeTestTab {...{ quiz, quizIndex, setQuizIndex, quizAnswers, quizLocked, setQuizLocked, quizFinished, choice, setChoice, startTest, submitAnswer, finishTest, resetQuiz, incorrectQs, setQuiz, setQuizAnswers, setQuizFinished, setTestStartedAt, setTestTimedOut, remaining, settings, testResult, testTimedOut, docName, busy }} />}
+                {tab === 'test' && <PracticeTestTab {...{ quiz, quizIndex, setQuizIndex, quizAnswers, quizLocked, setQuizLocked, quizFinished, choice, setChoice, startTest, submitAnswer, finishTest, resetQuiz, incorrectQs, setQuiz, setQuizAnswers, setQuizFinished, setTestStartedAt, setTestTimedOut, remaining, settings, testResult, testTimedOut, docName, busy, error, onClearError: () => setError('') }} />}
                 {tab === 'analytics' && <AnalyticsTab data={analytics} history={docHistory} />}
                 {tab === 'mindmap' && <MindMapTab {...{ mindMap, setMindMap, docText, run, busy, mmRef }} />}
                 {tab === 'plan' && <PlanTab {...{ studyPlan, setStudyPlan, docText, run, busy }} />}
@@ -709,6 +727,7 @@ export default function App() {
                 {tab === 'materials' && <MaterialsTab {...{ material, setMaterial, materialType, setMaterialType, docText, run, busy }} />}
                 {tab === 'paper' && <PaperTab {...{ samplePaper, setSamplePaper, docText, run, busy }} />}
                 {tab === 'video' && <VideoTab {...{ videoPlan, setVideoPlan, videoConfig, setVideoConfig, videoSlides, setVideoSlides, videoNarration, setVideoNarration, docText, summary, videoTopics, run, busy }} />}
+              </ToolErrorBoundary>
               {/* Loading skeleton lives in the results area (below the form /
                 Generate button, where the result will land) — never above the
                 form, so generating never pushes the form down. */}
@@ -808,6 +827,26 @@ function Launchpad({ sections, onOpen }) {
    dots, rendered directly below the executing button. Replaces the old
    centred modal. Renders only while a generation is running; the form
    above the button never moves. */
+// Last-resort guard so a render crash inside one tool can never blank the
+// whole app (a bad generation result once did exactly that). The fallback
+// shows an error with a way back; remounting on tab change clears it.
+class ToolErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { hasError: false } }
+  static getDerivedStateFromError() { return { hasError: true } }
+  componentDidCatch(err) { console.error('Tool render error', err) }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="alert error big" role="alert">
+          Something went wrong showing this tool. Your document is safe.
+          <br /><button className="btn small" onClick={this.props.onReset}>← Back to all tools</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 function GenStrip({ busy }) {
   if (!busy) return null
   const label = busy.charAt(0).toLowerCase() + busy.slice(1)
@@ -834,6 +873,7 @@ function SummaryTab(p) {
       </div>
       <button className="btn primary" onClick={p.genSummary} disabled={!!p.busy}>✨ Generate Summary</button>
       <GenStrip busy={p.busy} />
+      {p.error && <div className="alert error" role="alert">{p.error} <button className="btn small" onClick={() => { p.onClearError(); p.genSummary() }}>↻ Try again</button></div>}
       {p.summary && (
         <>
           <div className="answer-head">📚 AI Study Summary</div>
@@ -922,16 +962,22 @@ function AskTab(p) {
 function FlashcardsTab(p) {
   const due = p.flashcards ? dueReviewCards(p.reviewState, p.flashcards, p.docName) : []
   const mastered = p.flashcards ? p.flashcards.filter((c) => getReviewCard(p.reviewState, c, p.docName).box >= 5).length : 0
+  const doGenerate = () => p.run('Creating your visual flashcards…', async () => {
+    const ctx = getRelevantChunks(p.docText, 'definitions concepts important terms facts explanations processes', 8, 12000)
+    const d = await generate('flashcards', ctx, { count: p.settings.questionCount, difficulty: p.settings.difficulty })
+    // A raw string result must never be stored: .map on a string crashes
+    // the whole app into a blank screen (seen live). Only a real array lands.
+    if (!Array.isArray(d.result) || !d.result.length) throw new Error('GENERATION_FAILED')
+    p.setFlashcards(d.result)
+  })
+  const retry = () => { p.onClearError(); doGenerate() }
   return (
     <div>
       <h2>🎴 Visual Flashcards</h2>
       <p className="muted">Click a card to flip it and reveal a visual explanation of the concept.</p>
-      <button className="btn primary" onClick={() => p.run('Creating your visual flashcards…', async () => {
-        const ctx = getRelevantChunks(p.docText, 'definitions concepts important terms facts explanations processes', 8, 12000)
-        const d = await generate('flashcards', ctx, { count: p.settings.questionCount, difficulty: p.settings.difficulty })
-        if (d.result?.length) { p.setFlashcards(d.result) } else { throw new Error('GENERATION_FAILED') }
-      })} disabled={!!p.busy}>✨ Generate Visual Flashcards</button>
+      <button className="btn primary" onClick={doGenerate} disabled={!!p.busy}>✨ Generate Visual Flashcards</button>
       <GenStrip busy={p.busy} />
+      {p.error && <div className="alert error" role="alert">{p.error} <button className="btn small" onClick={retry}>↻ Try again</button></div>}
       {p.flashcards && (
         <>
           <p className="alert ok">Created {p.flashcards.length} visual flashcards!</p>
@@ -957,16 +1003,21 @@ function FlashcardsTab(p) {
 }
 
 function McqTab(p) {
+  const doGenerate = () => p.run('Generating your MCQs…', async () => {
+    const ctx = getRelevantChunks(p.docText, 'important exam concepts facts definitions processes', 10, 12000)
+    const d = await generate('quiz', ctx, { count: p.settings.questionCount, difficulty: p.settings.difficulty, category: 'Mixed' })
+    // Same blank-screen guard as flashcards: only a real array lands.
+    if (!Array.isArray(d.result) || !d.result.length) throw new Error('GENERATION_FAILED')
+    p.setMcqs(d.result)
+  })
+  const retry = () => { p.onClearError(); doGenerate() }
   return (
     <div>
       <h2>❓ Multiple Choice Questions</h2>
       <p className="muted">Generate exam-style MCQs with answers and explanations.</p>
-      <button className="btn primary" onClick={() => p.run('Generating your MCQs…', async () => {
-        const ctx = getRelevantChunks(p.docText, 'important exam concepts facts definitions processes', 10, 12000)
-        const d = await generate('quiz', ctx, { count: p.settings.questionCount, difficulty: p.settings.difficulty, category: 'Mixed' })
-        if (d.result?.length) p.setMcqs(d.result)
-      })} disabled={!!p.busy}>✨ Generate MCQs</button>
+      <button className="btn primary" onClick={doGenerate} disabled={!!p.busy}>✨ Generate MCQs</button>
       <GenStrip busy={p.busy} />
+      {p.error && <div className="alert error" role="alert">{p.error} <button className="btn small" onClick={retry}>↻ Try again</button></div>}
       {p.mcqs && p.mcqs.map((q, i) => (
         <details key={i} className="mcq"><summary>Q{i + 1}. {q.question}</summary>
           {Object.entries(q.options).map(([l, t]) => <p key={l}><b>{l})</b> {t}</p>)}
@@ -1005,6 +1056,7 @@ function PracticeTestTab(p) {
         {p.incorrectQs.length > 0 && <button className="btn" onClick={() => { p.setQuiz(p.incorrectQs); p.setQuizIndex(0); p.setQuizAnswers([]); p.setQuizLocked(false); p.setQuizFinished(false); p.setChoice(''); p.setTestStartedAt(Date.now()); p.setTestTimedOut(false) }}>🔁 Retake Incorrect Questions</button>}
         <button className="btn primary rose" onClick={p.startTest}>🚀 Start New Test</button>
         <GenStrip busy={p.busy} />
+        {p.error && <div className="alert error" role="alert">{p.error} <button className="btn small" onClick={() => { p.onClearError(); p.startTest() }}>↻ Try again</button></div>}
       </div>
     )
   }

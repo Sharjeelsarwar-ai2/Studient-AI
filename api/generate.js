@@ -235,6 +235,11 @@ export default async function handler(req, res) {
     const raw = await callGroq(prompt, system, maxTokens)
     if (!raw) return res.status(200).json({ ok: true, result: '' })
     let result = raw
+    // JSON-array tasks must NEVER fall through as a raw string: the client
+    // stores the result and calls .map on it, so a string crashes the whole
+    // app into a blank screen (seen live on Flashcards: strip shows, then
+    // white). A failed parse or an empty array is a 502, never a string.
+    const ARRAY_TASKS = ['quiz', 'flashcards', 'video-slides']
     try {
       const p = post(raw)
       if (p !== undefined && p !== null) result = p
@@ -243,7 +248,11 @@ export default async function handler(req, res) {
       else if (task === 'mindmap') return res.status(502).json({ ok: false, error: 'EMPTY_MINDMAP' })
     } catch {
       if (task === 'mindmap') return res.status(502).json({ ok: false, error: 'EMPTY_MINDMAP' })
-      /* keep raw for other tasks */
+      if (ARRAY_TASKS.includes(task)) return res.status(502).json({ ok: false, error: 'EMPTY_RESULT' })
+      /* keep raw for other (markdown) tasks */
+    }
+    if (ARRAY_TASKS.includes(task) && (!Array.isArray(result) || !result.length)) {
+      return res.status(502).json({ ok: false, error: 'EMPTY_RESULT' })
     }
     // Markdown tasks: apply the same formula/readability + non-academic cleanup as app.py.
     if (typeof result === 'string' && ['explain-topic', 'video-plan', 'study-plan', 'material', 'sample-paper', 'concepts', 'difficulty', 'ask', 'tutor'].includes(task)) {

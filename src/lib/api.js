@@ -45,6 +45,13 @@ export async function generate(task, context = '', params = {}) {
       data.result = JSON.parse(m ? m[0] : data.result)
     } catch { /* leave as-is; caller handles */ }
   }
+  // Array-shaped tasks must never reach the UI as a raw string: the callers
+  // .map over the result, so a string crashes the app to a blank screen.
+  if (['quiz', 'flashcards', 'mindmap', 'video-slides', 'suggestions'].includes(task) && typeof data.result === 'string') {
+    const err = new Error('EMPTY_RESULT')
+    err.code = 'EMPTY_RESULT'
+    throw err
+  }
   return data
 }
 
@@ -53,7 +60,9 @@ export function friendlyError(err) {
     return 'API key not configured — add GROQ_API_KEY in Vercel Settings → Environment Variables, then redeploy.'
   }
   if (err.code === 'EMPTY_MINDMAP') return "Couldn't build the mind map — try again."
+  if (err.code === 'EMPTY_RESULT') return "I couldn't generate a usable result from your document. Please try again."
   if (err.code === 'GENERATION_TIMEOUT') return 'The request took too long — please try again.'
+  if (err.code === 'GROQ_ERROR' && /429/.test(err.detail || '')) return 'The AI service is rate-limited right now. Please wait a minute and try again.'
   if (err.code === 'GROQ_ERROR') return 'The AI service returned an error. Please try again in a moment.'
   return 'Something went wrong generating this. Please try again.'
 }
