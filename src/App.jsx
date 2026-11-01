@@ -213,7 +213,35 @@ export default function App() {
 
   const run = useCallback(async (label, fn) => {
     setBusy(label); setError('')
-    try { await fn() } catch (err) { setError(friendlyError(err)) } finally { setBusy('') }
+    // Scroll guard: tapping Generate must keep the viewport at the tool
+    // area. Record where the user was; if the page jumps away without the
+    // user scrolling themselves (smooth-scroll race, focus scroll, anchoring
+    // shift), put it straight back. Shared by all 16 generatable tools.
+    const startY = window.scrollY
+    let userScrolled = false
+    const markUserScroll = () => { userScrolled = true }
+    window.addEventListener('wheel', markUserScroll, { passive: true })
+    window.addEventListener('touchmove', markUserScroll, { passive: true })
+    window.addEventListener('keydown', markUserScroll)
+    const restore = () => {
+      if (!userScrolled && Math.abs(window.scrollY - startY) > 200) {
+        window.scrollTo({ top: startY, behavior: 'instant' })
+      }
+    }
+    // Poll, don't just check once: a smooth scroll still in flight (e.g. the
+    // scrollIntoView that brought the button into view, or a slow software-
+    // rendered glide) can drag the page away again after a single restore.
+    // Re-asserting every 150ms until generation settles makes the viewport
+    // stick at the tool area; each restore is a no-op once we're back.
+    const guardPoll = setInterval(restore, 150)
+    try { await fn() } catch (err) { setError(friendlyError(err)) } finally {
+      clearInterval(guardPoll)
+      window.removeEventListener('wheel', markUserScroll)
+      window.removeEventListener('touchmove', markUserScroll)
+      window.removeEventListener('keydown', markUserScroll)
+      setBusy('')
+      restore()
+    }
   }, [])
 
   const genSummary = () => run('Analyzing your material…', async () => {
@@ -329,11 +357,14 @@ export default function App() {
 
   const openTool = (sectionId, tabId) => {
     setSection(sectionId); setTab(tabId); setView('tool')
-    window.scrollTo({ top: 0, behavior: settings.reducedMotion ? 'auto' : 'smooth' })
+    // Instant, not smooth: a smooth scroll-to-top leaves an animation window
+    // in which a fast tap on Generate can land mid-scroll and the page ends
+    // up back at the upload section. Instant has no race window.
+    window.scrollTo({ top: 0, behavior: 'instant' })
   }
   const goHome = () => {
     setView('home')
-    window.scrollTo({ top: 0, behavior: settings.reducedMotion ? 'auto' : 'smooth' })
+    window.scrollTo({ top: 0, behavior: 'instant' })
   }
   const goFamily = (sectionId) => {
     setSection(sectionId); setView('home')

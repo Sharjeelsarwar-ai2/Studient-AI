@@ -660,7 +660,7 @@ h3 { font-size: 1.1rem; }
   .shell { flex-direction: column; gap: 0; padding: 0 14px; align-items: stretch; /* mobile: sidebar is display:none, so stretch (not the desktop flex-start for the sticky sidebar) — otherwise .main sizes to its content's min-content width and the page widens past 390px (flashcards strip, metrics) */ }
   .shell > .main { padding: 0 0 36px; max-width: none; }
   .sidebar { display: none; }
-  .sidebar.mobile-open { display: flex; position: fixed; top: 0; left: 0; bottom: 0; z-index: 65; width: min(300px, 85vw); max-height: none; border-radius: 0; border-left: 0; border-top: 0; border-bottom: 0; animation: slideInLeft .3s cubic-bezier(.22, 1, .36, 1) both; }
+  .sidebar.mobile-open { display: flex; position: fixed; top: 0; left: 0; bottom: 0; z-index: 65; width: min(300px, 85vw); max-height: none; border-radius: 0; border-left: 0; border-top: 0; border-bottom: 0; animation: slideInLeft .3s cubic-bezier(.22, 1, .36, 1) both; background: var(--ivory); backdrop-filter: none; box-shadow: var(--shadow-lg); }
   .sidebar-backdrop { position: fixed; inset: 0; background: rgba(27, 42, 46, .45); backdrop-filter: blur(4px); z-index: 64; }
   .hamburger { display: inline-flex; }
   .topbar { padding: 8px 12px; gap: 10px; }

@@ -9,11 +9,28 @@ export async function checkHealth() {
 }
 
 export async function generate(task, context = '', params = {}) {
-  const r = await fetch('/api/generate', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ task, context, params }),
-  })
+  // A hung upstream call must fail fast with a clear error instead of
+  // spinning the generating strip forever with no result and no error.
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 120000)
+  let r
+  try {
+    r = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ task, context, params }),
+      signal: ctrl.signal,
+    })
+  } catch (e) {
+    clearTimeout(timer)
+    if (e?.name === 'AbortError') {
+      const err = new Error('GENERATION_TIMEOUT')
+      err.code = 'GENERATION_TIMEOUT'
+      throw err
+    }
+    throw e
+  }
+  clearTimeout(timer)
   const data = await r.json().catch(() => ({ ok: false, error: 'BAD_RESPONSE' }))
   if (!data.ok) {
     const err = new Error(data.error || 'GENERATION_FAILED')
@@ -36,6 +53,7 @@ export function friendlyError(err) {
     return 'API key not configured — add GROQ_API_KEY in Vercel Settings → Environment Variables, then redeploy.'
   }
   if (err.code === 'EMPTY_MINDMAP') return "Couldn't build the mind map — try again."
+  if (err.code === 'GENERATION_TIMEOUT') return 'The request took too long — please try again.'
   if (err.code === 'GROQ_ERROR') return 'The AI service returned an error. Please try again in a moment.'
   return 'Something went wrong generating this. Please try again.'
 }
